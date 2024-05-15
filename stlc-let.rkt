@@ -3,9 +3,6 @@
 
 ;; the simply-typed lambda calculus, with let sugar
 
-(define (dict-get dict key)
-  (dict-ref dict key (λ () (err (format "identifier ~a not found" key)))))
-
 (define (value? val) (or (number? val) (string? val)))
 
 ; note: default arguments MUST all be at the end
@@ -13,19 +10,19 @@
 (define (interpret expr [ctx #hash()])
   (match expr
     [val #:when (value? val) val]
-    [val #:when (symbol? val) (interpret (dict-get ctx val) ctx)]
-    [`((λ ,id ,body) ,arg)
-      (interpret body (dict-set ctx id (interpret arg ctx)))]
-    [`((λ ,id (: ,type) ,body) ,arg) ; desugaring
-      (interpret `((λ ,id ,body) ,expr) ctx)]
-    [`(let ,id ,expr ,body)
-      (interpret `((λ ,id ,body) ,expr) ctx)]
-    [`(let ,id (: ,type) ,expr ,body)
-      (interpret `((λ ,id ,body) ,expr) ctx)]
-    [`(: ,type) ; error handling
-      (err (format "interpreting a type ~a" type))]
-    [`(λ ,id ,body)
-      (err (format "interpreting an abstraction ~a" `(λ ,id ,body)))]
+    [val #:when (symbol? val)
+      (with-handlers
+        ([exn:fail? (λ (exn) val)])
+        (interpret (dict-ref ctx val) ctx))]
+    [`(λ ,id ,body) `(λ ,id ,body)]
+    [`(,body ,arg)
+      (match (interpret body ctx)
+        [`(λ ,id ,body) (interpret body (dict-set ctx id (interpret arg ctx)))]
+        [expr `(,(interpret expr ctx) ,(interpret arg ctx))])]
+
+    [`((λ ,id (: ,type) ,body) ,arg)  (interpret `((λ ,id ,body) ,expr) ctx)]
+    [`(let ,id ,expr ,body) (interpret `((λ ,id ,body) ,expr) ctx)]
+    [`(let ,id (: ,type) ,expr ,body) (interpret `((λ ,id ,body) ,expr) ctx)]
     [expr (err (format "interpreting an unknown expression ~a" expr))]))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
@@ -76,3 +73,12 @@
       (err "unable to infer type from a function")]
     [`(: ,type) (err "inferring from a type annotation")]
     [expr (err (format "inferring an unknown expression ~a" expr))]))
+
+(define (dict-get dict key)
+  (dict-ref dict key (λ () (err (format "identifier ~a not found" key)))))
+
+(require rackunit)
+(check-equal? (interpret '(λ x x)) '(λ x x))
+(check-equal? (interpret '((λ a a) (x y))) '(x y))
+(check-equal? (interpret '((λ a (x y)) (λ z z))) '(x y))
+(check-equal? (interpret '((λ a (a y)) x)) '(x y))
