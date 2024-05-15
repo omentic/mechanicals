@@ -46,14 +46,22 @@
       (match with
         [`(→ ,a ,b) (check body b (dict-set ctx id a))]
         [_ (err (format "expected → type to check λ with but received ~a" with))])]
+    [`((λ ,id ,body) ,arg)
+      (note "unable to check arg type from λ lacking annotation")
+      (check body with ctx)] ; hmm
+    [`(λ ,id (: ,type) ,body)
+      (and (check `(λ ,id ,body) type ctx) (equiv with type))]
     [`((λ ,id (: (→ ,a ,b)) ,body) ,arg)
       (and (check arg a ctx) (equiv with b)
         (check `(λ ,id ,body) `(→ ,a ,b) (dict-set ctx id a)))]
-    [`(let ,id ,expr ,body) ; desugaring
+    ; desugaring and error handling
+    [`(let ,id ,expr ,body)
       (check `((λ ,id ,body) ,expr) with ctx)]
     [`(let ,id (: ,type) ,expr ,body)
       (check `((λ ,id (: ,type) ,body) ,expr) with ctx)]
-    [`((λ ,id ,body) (: ,type) ,arg) ; error handling
+    [`(λ ,id (: ,type) ,body)
+      (err (format "expected → type on λ but received ~a" type))]
+    [`((λ ,id (: ,type) ,body) ,arg)
       (err (format "expected → type on λ but received ~a" type))]
     [expr (err (format "inferring an unknown expression ~a" expr))]))
 
@@ -73,7 +81,7 @@
     [`((λ ,id ,body) ,arg)
       (infer body (dict-set ctx id (infer arg ctx)))]
     [`(λ ,id (: (→ ,a ,b)) ,body)
-      (note "arg types are unable to be inferred")
+      (note "unable to infer arg type from λ lacking annotation")
       (if (check body b (dict-set ctx id a))
         `(→ ,a ,b)
         (err (format "inferred return type of ~a does not match annotated type ~a"
@@ -88,8 +96,11 @@
     [`(let ,id (: ,type) ,expr ,body)
       (infer `((λ ,id (: ,type) ,expr) ,body) ctx)]
     [`(λ ,id ,body) ; error handling
-      (err "unable to infer type from a function")]
-    [`(: ,type) (err "inferring from a type annotation")]
+      (err "unable to infer type from λ lacking annotation")] ; hmm
+    [`(λ ,id (: ,type) ,body)
+      (err (format "expected → type on λ but received ~a" type))]
+    [`((λ ,id (: ,type) ,body) ,arg)
+      (err (format "expected → type on λ but received ~a" type))]
     [expr (err (format "inferring an unknown expression ~a" expr))]))
 
 (define (dict-get dict key)
