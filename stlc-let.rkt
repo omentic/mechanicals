@@ -68,7 +68,6 @@
 ;;      (equiv Type Type): Bool
 (define (equiv a b)
   (match* (a b)
-    [[`(ref ,a) `(ref ,b)] (equiv a b)]
     [[`(→ ,a ,c) `(→ ,b ,d)] (and (equiv a b) (equiv c d))]
     [[a b] (equal? a b)]))
 
