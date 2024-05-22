@@ -1,21 +1,26 @@
-#lang racket
+#lang racket ; note: do NOT use racket/base
 (require "lib.rkt")
 
-;; the untyped lambda calculus
+;; The Untyped Lambda Calculus
 
-(define (interpret expr [ctx #hash()])
+; note: default arguments MUST all be at the end
+(define (interpret expr [ctx '()])
   (match expr
-    [val #:when (or (number? val) (string? val)) val]
-    [val #:when (symbol? val)
-      (with-handlers
-        ([exn:fail? (λ (exn) val)]) ; note: unbound identifiers are supported
-        (interpret (dict-ref ctx val) ctx))]
-    [`(λ ,id ,body) `(λ ,id ,body)]
+    [`(λ ,id ,body)
+      `(λ ,id ,(interpret body ctx))]
+    [`((λ ,id ,body) ,arg)
+      (interpret body (dict-set ctx id arg))]
+    [`(,id ,arg) #:when (dict-has-key? ctx id)
+      (interpret `(,(interpret (dict-ref ctx id) ctx) ,arg))]
     [`(,body ,arg)
-      (match (interpret body ctx)
-        [`(λ ,id ,body) (interpret body (dict-set ctx id (interpret arg ctx)))]
-        [expr `(,(interpret expr ctx) ,(interpret arg ctx))])]
-    [expr (err (format "unknown expression ~a" expr))]))
+      (let ([reduced (interpret body ctx)])
+        (if (equal? body reduced)
+          `(,reduced ,(interpret arg ctx))
+          (interpret `(,reduced ,arg) ctx)))]
+    [id #:when (dict-has-key? ctx id)
+      (interpret (dict-ref ctx id) ctx)]
+    [val #:when (symbol? val) val]
+    [_ (err (format "unknown expression ~a" expr))]))
 
 (require rackunit)
 (check-equal? (interpret '(λ x x)) '(λ x x))

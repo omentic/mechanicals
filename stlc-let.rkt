@@ -1,29 +1,31 @@
-#lang racket ; note: do NOT use racket/base
+#lang racket
 (require "lib.rkt")
 
-;; the simply-typed lambda calculus, with let sugar
+;; The Simply-Typed Lambda Calculus, with let sugar
 
-(define (value? val) (or (number? val) (string? val)))
+(define (value? val) (or (number? val) (string? val) (symbol? val)))
 
-; note: default arguments MUST all be at the end
-; no function overloading ;_;
+; note: no function overloading ;_;
 ;;      (interpret Expr Table[Sym, Expr]): Value
-(define (interpret expr [ctx #hash()]) (interpret- (strip expr) ctx))
+(define (interpret expr) (interpret- (strip expr) '()))
 (define (interpret- expr ctx)
   (match expr
-    [val #:when (value? val) val]
-    [val #:when (symbol? val)
-      (with-handlers
-        ([exn:fail? (λ (exn) val)])
-        (interpret- (dict-ref ctx val) ctx))]
     [`(λ ,id ,body) `(λ ,id ,body ,ctx)]
     [`(λ ,id ,body ,env) `(λ ,id ,body ,env)]
-    [`(,body ,arg)
-      (match (interpret- body ctx)
-        [`(λ ,id ,body) (interpret- body (dict-set ctx id (interpret- arg ctx)))]
-        [`(λ ,id ,body ,env) (interpret- body (dict-set env id (interpret- arg ctx)))]
-        [expr `(,(interpret- expr ctx) ,(interpret- arg ctx))])]
-    ; desugaring and error handling
+    [`((λ ,id ,body) ,arg)
+      (interpret- body (dict-set ctx id (interpret- arg ctx)))]
+    [`((λ ,id ,body ,env) ,arg)
+      (interpret- body (dict-set env id (interpret- arg ctx)))]
+    [`(,id ,arg) #:when (dict-has-key? ctx id)
+      (interpret- `(,(interpret- (dict-ref ctx id) ctx) ,arg) ctx)]
+    [`(,body ,arg) ; todo: how to recognize an irreducible term? this is kinda cheating, i think
+      (let ([reduced (interpret- body ctx)])
+        (if (equal? body reduced)
+          `(,reduced ,(interpret- arg ctx))
+          (interpret- `(,reduced ,arg) ctx)))]
+    [id #:when (dict-has-key? ctx id)
+      (interpret- (dict-ref ctx id) ctx)]
+    [val #:when (value? val) val]
     [`(let ,id ,expr ,body) (interpret- `((λ ,id ,body) ,expr) ctx)]
     [expr (err (format "interpreting an unknown expression ~a" expr))]))
 
