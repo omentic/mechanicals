@@ -3,189 +3,193 @@
 
 ;; The Simply-Typed Lambda Calculus with higher-order *predicative* references
 
-; add sequencing, annotate stuff properly
-
-;; definition of values
-(define (value? val)
-  (or (natural? val) (equal? 'sole val)))
-
 ;;      (interpret Expr Table[Sym, Expr]) → Value
-(define (interpret expr [ctx '()] [heap '()]) (interpret- (strip expr) ctx heap))
+(define (interpret expr [ctx #hash()] [heap (make-hash)])
+  (interpret- (strip (desugar expr)) ctx heap))
 (define (interpret- expr ctx heap)
   (match expr
-    [`(λ ,id ,body) `(λ ,id ,body ,ctx)] ; first class functions
+    [x #:when (dict-has-key? ctx x)               ; x
+      (interpret- (dict-ref ctx x) ctx heap)]
+    [x #:when (dict-has-key? heap x) x] ; todo
+    [n #:when (natural? n) n]                     ; n
+    ['⟨⟩ '⟨⟩]                                      ; ⟨⟩
+
+    [`(λ ,id ,body) `(λ ,id ,body ,ctx)]          ; λx:τ.e
     [`(λ ,id ,body ,env) `(λ ,id ,body ,env)]
 
-    [`((λ ,id ,body) ,arg) ; function application
-      (interpret- body (dict-set ctx id (interpret- arg ctx heap)) heap)]
-    [`((λ ,id ,body ,env) ,arg) ; uses the closure env if it exists
-      (interpret- body (dict-set env id (interpret- arg ctx heap)) heap)]
+    [`(new ,expr)                                 ; new e
+      (let ([address (gensym)])
+        (dict-set! heap address expr) address)]
+    [`(! ,id)                                     ; !e
+      (let ([id (interpret- id ctx heap)])
+        (if (dict-has-key? heap id)
+          (interpret- (dict-ref heap id) ctx heap)
+          (err (format "attempting to deref unknown reference ~a" id))))]
+    [`(set ,id ,expr)                             ; e := e
+      (let ([id (interpret- id ctx heap)])
+        (if (dict-has-key? heap id)
+          (dict-set! heap id (interpret- expr ctx heap))
+          (err (format "attempting to update unknown reference ~a" id))))
+      '⟨⟩]
 
-    [`(ref ,id) `(ref ,id)] ; references
-    [`(deref ,id) #:when (dict-has-key? heap id)
-      (interpret- (dict-ref heap id) ctx heap)]
-    [`(set ,id ,expr ,body) ; note: MUST resolve the binding before applying!! !!
-      (interpret- body ctx (dict-set heap id (interpret- expr ctx heap)))]
+    [`(,body ,arg)                                ; e e
+      (match (interpret- body ctx heap)
+        [`(λ ,id ,body ,env)
+          (interpret- body (dict-set env id (interpret- arg ctx heap)) heap)]
+        [expr (err (format "attempting to interpret arg ~a applied to unknown expression ~a" arg expr))])]
 
-    ; todo: how to recognize an irreducible term? this is kinda cheating, i think
-    [`(,body ,arg) ; general application (resolves to function application or returns as an object)
-      (let ([reduced (interpret- body ctx heap)])
-        (if (equal? body reduced) `(,reduced ,(interpret- arg ctx heap))
-          (interpret- `(,reduced ,arg) ctx heap)))] ; change! recur
-
-    [id #:when (dict-has-key? ctx id) ; bound variables and references
-      (interpret- (dict-ref ctx id) ctx heap)]
-    [id #:when (dict-has-key? heap id) id]
-    [val #:when (value? val) val]
-
-    [`(let ,id ,expr ,body) ; desugaring and error handling
-      (interpret- `((λ ,id ,body) ,expr) ctx heap)]
-    [`(deref ,id) (err (format "attempting to deref unknown reference ~a" id))]
     [expr (err (format "interpreting an unknown expression ~a" expr))]))
 
-;; removes typing annotations.
+;; transforms higher-level constructs into the core calculus
+(define (desugar expr)
+  (match expr
+    ['sole '⟨⟩]
+    [`(ref ,expr) (desugar `(new ,expr))]
+    [`(deref ,expr) (desugar `(! ,expr))]
+    [`(set ,id ,expr ,body)
+      (desugar `(let _ (set ,id ,expr) ,body))]
+
+    [`(let ,id (: (→ ,k ,a ,b)) (λ ,x ,e) ,body)
+      (desugar `((λ ,id (: (→ ,k ,a ,b)) ,body) (λ ,x (: ,a) ,e)))]
+    [`(let ,id (: (→ ,a ,b)) ,expr ,body)
+      (err "you forgot to add a level annotation dummy")]
+    [`(let ,id (: ,type) ,e ,body)
+      (desugar `((λ ,id (: ,type) ,body) ,e))]
+    [`(let ,id (: ,type) ,expr)
+      (desugar `(let ,id (: ,type) ,expr '⟨⟩))]
+
+    [`(new ,expr) `(new ,(desugar expr))]
+    [`(! ,expr) `(! ,(desugar expr))]
+    [`(set ,id ,expr) `(set ,(desugar id) ,(desugar expr))]
+    [`(λ ,id (: ,type) ,expr) `(λ ,id (: ,type) ,(desugar expr))]
+    [`(,body ,arg) `(,(desugar body) ,(desugar arg))]
+    [id #:when (number? id) id]
+    [id #:when (symbol? id) id]
+
+    [expr (err (format "desugaring unknown expression ~a" expr))]))
+
+;; removes typing annotations
 (define (strip expr)
   (match expr
+    [`(λ ,id (: ,type) ,body (: ,type)) `(λ ,(strip id) ,(strip body))]
+    [`(λ ,id ,body (: ,type)) `(λ ,(strip id) ,(strip body))]
+    [`(λ ,id (: ,type) ,body) `(λ ,(strip id) ,(strip body))]
     [`(,a ,b) `(,(strip a) ,(strip b))]
-    [`(λ ,id ,body) `(λ ,id ,(strip body))]
-    [`(let ,id ,expr ,body) `(let ,id ,(strip expr) ,(strip body))]
-    [`(set ,id ,expr ,body) `(set ,id ,(strip expr) ,(strip body))]
-    [`(λ ,id (: ,type) ,body) (strip `(λ ,id ,body))]
-    [`(let ,id (: ,type) ,expr ,body) (strip `(let ,id ,expr ,body))]
     [expr expr]))
-
-; note: this bidirectional system is incapable of inferring types of arguments from *usage*:
-; i.e. in function definitions etc. i think this might only be possible with unification.
-; we make note of when such cases are relevant but continue with the typechecking.
-
-; todo: checking levels??
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
 (define (check expr with [Γ #hash()])
+  (check- (desugar expr) with Γ))
+(define (check- expr with Γ)
   ; (print (format "check: ~a" (fmt expr)))
   (match* (expr with)
-    [('sole 'Unit) #t] ; values
-    [(num 'Nat) #:when (natural? num) #t]
-    [(val _) #:when (dict-has-key? Γ val) (equiv? (dict-ref Γ val) with)]
+    [(n 'Nat) #:when (natural? n) #t]       ; ↝ Γ ⊢ n: Nat
+    [('⟨⟩ 'Unit) #t]                         ; ↝ Γ ⊢ ⟨⟩: Unit
+    [(val _) #:when (dict-has-key? Γ val)   ; x: τ ∈ Γ → Γ ⊢ x: τ
+      (equal? (dict-ref Γ val) with)]
 
-    [(`(ref ,id) `(Ref ,type)) (check id type Γ)] ; references
-    [(`(deref ,id) _) (check id `(Ref ,with) Γ)]
-    [(`(set ,id ,expr ,body) _)
-      (and (check expr (infer id Γ) Γ) (check body with Γ))]
+    [(`(new ,e) `(Ref ,τ)) (check- e τ Γ)]  ; Γ ⊢ e: τ → Γ ⊢ new e: Ref τ
+    [(`(! ,e) τ) (check- e `(Ref ,τ) Γ)]    ; Γ ⊢ e: Ref τ → Γ ⊢ !e: τ
+    [(`(set ,e1 ,e2) 'Unit)                 ; ↝ Γ ⊢ e1 := e2: Unit
+      (match (infer- e1 Γ)
+        [`(Ref ,τ) (check- e2 τ Γ)]         ; Γ ⊢ e1: Ref τ, Γ ⊢ e2: τ
+        [type (err (format "attempting to update non-reference ~a: ~a" e1 type))])]
 
-    [(`(λ ,id ,body) `(→ ,k ,a ,b)) ; function literals
-      ; note: we are unable to check argument type (a). it is totally generic
-      ; (note (format "assuming annotated type ~a for argument ~a" a id))
-      (and ; check level (k) and return type (b)
-        (>= k (max (level a) (level b)))
-        (check body b (dict-set Γ id a)))]
-    [(`(λ ,id (: ,type) ,body) _)
-      (and (equiv? type with) (check `(λ ,id ,body) type Γ))]
+    [(`(λ ,x (: ,τ) ,e) `(→ ,k ,τ1 ,τ2))    ; ↝ Γ ⊢ λx: τ1.e: τ1 →k τ2
+      (and
+        (equal? τ τ1)
+        (>= k (max-level e (dict-set Γ x τ1) τ1 τ2))  ; k ≥ max-level(Γ, τ1, τ2) (KNOB)
+        (check- e τ2 (dict-set Γ x τ1)))]             ; Γ, x: τ1 ⊢ e: τ2
 
-    [(`((λ ,id ,body) ,arg) _) ; function application
-      (check body with (dict-set Γ id (infer arg Γ)))]
-    [(`((λ ,id (: (→ ,k ,a ,b)) ,body) ,arg) _)
-      (and (equiv? b with) (check arg a Γ)
-        (check `(λ ,id ,body) `(→ ,k ,a ,b) (dict-set Γ id a)))]
-
-    [(`(let ,id (: ,type) ,expr ,body) _) ; annotated parameter
-      (and (check expr type Γ) (check body with (dict-set Γ id type)))]
-    [(`(let ,id ,expr ,body) _) ; desugaring
-      (check `((λ ,id ,body) ,expr) with Γ)]
-
-    [(`(,body ,arg) _) ; general application
-      (match (infer body Γ) ; FIXME: this is broken and i don't know why
-        [`(→ ,k ,a ,b)     ; smth wrong being passed in? thinks f is of a large type when not
-          (and (equiv? b with) (equiv? a (infer arg Γ)))]
+    [(`(,e1 ,e2) τ)                                   ; ↝ Γ ⊢ (e1 e2): τ2
+      (match (infer- e1 Γ)
+        [`(→ ,k ,τ1 ,τ2)                              ; Γ ⊢ e1: τ1 →k τ2
+          (and (equal? τ2 τ)                          ; Γ ⊢ e2: τ1
+               (equal? τ1 (infer- e2 Γ)))]
         [type (err (format "expected → type on application body, got ~a" type))])]
 
-    [(`(λ ,id (: ,type) ,body) _) ; error handling
-      (err (format "expected → type on λ but received ~a" type))]
-    [(`((λ ,id (: ,type) ,body) ,arg) _)
-      (err (format "expected → type on λ but received ~a" type))]
-    [(`(λ ,id ,body) `(→ ,a ,b))
+    [(`(λ ,id (: ,type) ,body) `(→ ,a ,b)) ; error handling
       (err "you forgot to add a level annotation dummy")]
-    [(expr _) (err (format "inferring an unknown expression ~a" expr))]))
+    [(expr _) (err (format "checking an unknown expression ~a with type ~a" expr with))]))
 
 ;;      (infer Expr Table[Sym, Type]) → Type
 (define (infer expr [Γ #hash()])
+  (infer- (desugar expr) Γ))
+(define (infer- expr Γ)
   ; (print (format "infer: ~a" (fmt expr)))
   (match expr
-    ['sole 'Unit] ; values
-    [val #:when (natural? val) 'Nat]
-    [val #:when (dict-has-key? Γ val) (dict-ref Γ val)]
+    ['⟨⟩ 'Unit]                          ; ↝ Γ ⊢ ⟨⟩: Unit
+    [n #:when (natural? n) 'Nat]        ; ↝ Γ ⊢ n: Nat
+    [x #:when (dict-has-key? Γ x)       ; x: τ ∈ Γ
+      (dict-ref Γ x)]                   ; ↝ Γ ⊢ x: τ
 
-    [`(ref ,id) `(Ref ,(infer id Γ))] ; references
-    [`(deref ,id)
-      (match (infer id Γ)
-        [`(Ref ,type) type]
+    [`(new ,e) `(Ref ,(infer- e Γ))]    ; Γ ⊢ e: τ → Γ ⊢ new e: Ref τ
+    [`(! ,e)
+      (match (infer- e Γ)
+        [`(Ref ,type) type]             ; Γ ⊢ e: Ref τ → Γ ⊢ !e: τ
         [_ (err "attempting to deref term not of Ref type!")])]
-    [`(set ,id ,expr ,body) #:when (dict-has-key? Γ id)
-      (if (check expr
-        (match (dict-ref Γ id) ; all ref types in Γ are of form (Ref ,type):
-          [`(Ref ,type) type]  ; so we must deconstruct them to continue typechecking.
-          [_ (err "attempting to call set on term not of Ref type!")]) Γ)
-        (infer body Γ)
-        (err (format "attempting to update ~a: ~a with term ~a: ~a of differing type"
-          id (dict-ref Γ id) expr (infer expr Γ))))]
+    [`(set ,e1 ,e2)
+      (match (infer- e1 Γ)
+        [`(Ref ,τ)                       ; Γ ⊢ e1: Ref τ, Γ ⊢ e2: τ
+          (if (check- e2 τ Γ) 'Unit      ; ↝ Γ ⊢ e1 := e2: Unit
+            (err (format "attempting to update ~a: ~a with term ~a: ~a of differing type"
+              e1 τ e2 (infer- e2 Γ))))]
+        [type (err (format "attempting to update non-reference ~a: ~a" e1 type))])]
 
-    [`(λ ,id ,body) ; function abstraction
-      (err "unable to infer type from λ lacking annotation")] ; hmm. can we fix this?
-    [`(λ ,id (: (→ ,k ,a ,b)) ,body) ; return annotation after checking it is correct
-      (if (check `(λ ,id ,body) `(→ ,k ,a ,b) Γ) `(→ ,k ,a ,b)
-        (err (format "inferred return type of ~a does not match annotated type ~a"
-          `(λ ,id ,body) b)))]
+    [`(λ ,x (: ,τ1) ,e)
+      (let ([τ2 (infer- e (dict-set Γ x τ1))])            ; Γ, x: τ1 ⊢ e: τ2
+        (let ([k (max-level e (dict-set Γ x τ1) τ1 τ2)])  ; k ≥ max-level(Γ, τ1, τ2) (KNOB)
+          `(→ ,k ,τ1 ,τ2)))]                              ; ↝ Γ ⊢ λx: τ1.e: τ1 →k τ2
 
-    [`((λ ,id ,body) ,arg) ; function application
-      (infer body (dict-set Γ id (infer arg Γ)))]
-    [`((λ ,id (: (→ ,k ,a ,b)) ,body) ,arg) ; check arg and body separately
-      (if (and (check arg a Γ) (check `(λ ,id ,body) `(→ ,k ,a ,b) Γ)) b
-        (err (format "inferred type of ~a does not match annotated type ~a"
-          `((λ ,id ,body) ,arg) `(: (→ ,k ,a ,b)))))]
-
-    [`(,body ,arg) ; general application
-      (match (infer body Γ)
-        [`(→ ,k ,a ,b)
-          (if (check arg a Γ) b
-            (err (format "inferred argument type ~a does not match arg ~a" a arg)))]
-        [`(→ ,a ,b) (err "you forgot to add a level annotation dummy")]
+    [`(,e1 ,e2)
+      (match (infer- e1 Γ)
+        [`(→ ,k ,τ1 ,τ2)                                  ; Γ ⊢ e1: τ1 →k τ2
+          (if (check- e2 τ1 Γ)                            ; Γ ⊢ e2: τ1
+            τ2                                            ; ↝ Γ ⊢ (e1 e2): τ2
+            (err (format "inferred argument type ~a does not match arg ~a" τ1 e2)))]
         [type (err (format "expected → type on application body, got ~a" type))])]
 
-    [`(let ,id (: ,type) ,expr ,body) ; annotated parameter
-      (if (check expr type Γ) (infer body (dict-set Γ id type))
-        (err (format "inferred argument type ~a does not match arg ~a" type expr)))]
-
-    [`(let ,id ,expr ,body) ; desugaring
-      (infer `((λ ,id ,expr) ,body) Γ)]
-
-    [`(λ ,id (: ,type) ,body) ; error handling
-      (err (format "expected → type on λ but received ~a" type))]
-    [`((λ ,id (: ,type) ,body) ,arg)
-      (err (format "expected → type on λ but received ~a" type))]
-    [`(set ,id ,expr ,body)
-      (err (format "attempting to update unknown reference ~a" id))]
+    [`(λ ,x ,e) ; error handling
+      (err "unable to infer type from λ lacking parameter annotation")]
     [expr (err (format "inferring an unknown expression ~a" expr))]))
 
-; todo: when checking, disregard levels on the individual types??? hmmmmmmm
-;;      (equiv? Type Type) → Bool
-(define (equiv? a b)
-  (match* (a b)
-    ; [[`(→ ,j ,a ,c) `(→ ,k ,b ,d)] (and (equiv? a b) (equiv? c d))]
-    [[a b] (equal? a b)]))
+;;      (max-level Table[Sym, Type] Expr Type Type) → Natural
+(define (max-level e Γ τ1 τ2)
+  (max
+    (level-type τ1)
+    (level-type τ2)
+    (level-body e Γ)))
 
-;;      (level Type) → Natural
-(define (level type)
-  (match type
+;;      (level-type Type) → Natural
+(define (level-type τ)
+  (match τ
     ['Unit 0]
     ['Nat 0]
-    [`(→ ,k ,a ,b) k]
-    [`(Ref ,t) (+ 1 (level t))]
-    [type (err (format "inferring the level of unknown type ~a" type))]))
+    [`(→ ,k ,τ1 ,τ2)
+      (if (or (< k (level-type τ1)) (< k (level-type τ2)))
+        (err (format "annotated level ~a is less than inferred levels of ~a and ~a!"
+          k τ1 τ2))
+        k)]
+    [`(Ref ,τ) (+ 1 (level-type τ))] ; (KNOB)
+    [τ (err (format "inferring the level of unknown type ~a" τ))]))
+
+;;      (level-body Expr Table[Sym, Type]) → Natural
+(define (level-body e Γ)
+  (match e
+    ['⟨⟩ 0]
+    [n #:when (natural? n) 0]
+    [x #:when (dict-has-key? Γ x)
+      (level-type (dict-ref Γ x))]
+    [`(new ,e) (level-body e Γ)]
+    [`(! ,e) (level-body e Γ)]
+    [`(set ,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
+    [`(λ ,x (: ,τ) ,e) (level-body e (dict-set Γ x τ))] ; todo: should be 0?
+    [`(,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]))
 
 ;;      (fmt Expr) → String
 (define (fmt expr)
   (match expr
-    ['sole "⟨⟩"]
+    ['⟨⟩ "⟨⟩"]
     [`(λ ,id ,body) (format "λ~a.[~a]" id (fmt body))]
     [`((λ ,id ,body) ,arg) (format "~a = ~a; ~a" id (fmt arg) (fmt body))]
     [`(λ ,id (: ,type) ,body) (format "~a: ~a; ~a" id (fmt type) (fmt body))]
@@ -197,8 +201,8 @@
     [`(→ ,a ,b) (format "(~a → ~a)" (fmt a) (fmt b))]
     [`(→ ,k ,a ,b) (format "(~a →~a ~a)" (fmt a) k (fmt b))]
     [`(Ref ,a) (format "Ref ~a" (fmt a))]
-    [`(ref ,a) (format "new ~a" (fmt a))]
-    [`(deref ,a) (format "!~a" (fmt a))]
+    [`(new ,a) (format "new ~a" (fmt a))]
+    [`(! ,a) (format "!~a" (fmt a))]
     [`(,a ,b) (format "(~a ~a)" (fmt a) (fmt b))]
     [(hash-table) "{}"] ; fixme lmao
     [(hash-table (k v)) (format "{~a: ~a}" (fmt k) (fmt v))]
