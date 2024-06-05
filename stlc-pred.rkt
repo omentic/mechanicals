@@ -8,14 +8,12 @@
   (interpret- (strip (desugar expr)) ctx heap))
 (define (interpret- expr ctx heap)
   (match expr
-    [x #:when (dict-has-key? ctx x)               ; x
-      (interpret- (dict-ref ctx x) ctx heap)]
+    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)] ; x
     [x #:when (dict-has-key? heap x) x] ; todo
     [n #:when (natural? n) n]                     ; n
     ['⟨⟩ '⟨⟩]                                      ; ⟨⟩
 
     [`(λ ,id ,body) `(λ ,id ,body ,ctx)]          ; λx:τ.e
-    [`(λ ,id ,body ,env) `(λ ,id ,body ,env)]
 
     [`(new ,expr)                                 ; new e
       (let ([address (gensym)])
@@ -85,8 +83,8 @@
   (match* (expr with)
     [(n 'Nat) #:when (natural? n) #t]       ; ↝ Γ ⊢ n: Nat
     [('⟨⟩ 'Unit) #t]                         ; ↝ Γ ⊢ ⟨⟩: Unit
-    [(val _) #:when (dict-has-key? Γ val)   ; x: τ ∈ Γ → Γ ⊢ x: τ
-      (equal? (dict-ref Γ val) with)]
+    [(x _) #:when (dict-has-key? Γ x)        ; x: τ ∈ Γ → Γ ⊢ x: τ
+      (equal? (dict-ref Γ x) with)]
 
     [(`(new ,e) `(Ref ,τ)) (check- e τ Γ)]  ; Γ ⊢ e: τ → Γ ⊢ new e: Ref τ
     [(`(! ,e) τ) (check- e `(Ref ,τ) Γ)]    ; Γ ⊢ e: Ref τ → Γ ⊢ !e: τ
