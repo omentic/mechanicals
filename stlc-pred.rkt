@@ -38,34 +38,6 @@
 
     [expr (err (format "interpreting an unknown expression ~a" expr))]))
 
-;; transforms higher-level constructs into the core calculus
-(define (desugar expr)
-  (match expr
-    ['sole '⟨⟩]
-    [`(ref ,expr) (desugar `(new ,expr))]
-    [`(deref ,expr) (desugar `(! ,expr))]
-    [`(set ,id ,expr ,body)
-      (desugar `(let _ (set ,id ,expr) ,body))]
-
-    [`(let ,id (: (→ ,k ,a ,b)) (λ ,x ,e) ,body)
-      (desugar `((λ ,id (: (→ ,k ,a ,b)) ,body) (λ ,x (: ,a) ,e)))]
-    [`(let ,id (: (→ ,a ,b)) ,expr ,body)
-      (err "you forgot to add a level annotation dummy")]
-    [`(let ,id (: ,type) ,e ,body)
-      (desugar `((λ ,id (: ,type) ,body) ,e))]
-    [`(let ,id (: ,type) ,expr)
-      (desugar `(let ,id (: ,type) ,expr '⟨⟩))]
-
-    [`(new ,expr) `(new ,(desugar expr))]
-    [`(! ,expr) `(! ,(desugar expr))]
-    [`(set ,id ,expr) `(set ,(desugar id) ,(desugar expr))]
-    [`(λ ,id (: ,type) ,expr) `(λ ,id (: ,type) ,(desugar expr))]
-    [`(,body ,arg) `(,(desugar body) ,(desugar arg))]
-    [id #:when (number? id) id]
-    [id #:when (symbol? id) id]
-
-    [expr (err (format "desugaring unknown expression ~a" expr))]))
-
 ;;      (check Expr Type Table[Sym, Type]): Bool
 (define (check expr with [Γ #hash()])
   (check- (desugar expr) with Γ))

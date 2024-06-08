@@ -65,6 +65,28 @@
     [(hash-table (k1 v1) (k2 v2) (k3 v3)) (format "{~a: ~a; ~a: ~a; ~a: ~a}" (fmt k1) (fmt v1) (fmt k2) (fmt v2) (fmt k3) (fmt v3))]
     [expr (format "~a" expr)]))
 
+;; transforms higher-level constructs into the core calculus
+(define (desugar expr)
+  (match expr
+    ['⟨⟩ 'sole]
+    [`(ref ,e) (desugar `(new ,e))]
+    [`(deref ,e) (desugar `(! ,e))]
+    [`(set ,e1 ,e2 ,in)
+      (desugar `(let _ (set ,e1 ,e2) ,in))]
 
-(provide dbg err note print todo strip fmt)
+    [`(let ,x (: (→ ,k ,a ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ ,x (: (→ ,k ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
+    [`(let ,x (: (→ ,a ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ ,x (: (→ ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
+    [`(let ,x (: ,t) ,e ,in)
+      (desugar `((λ ,x (: ,t) ,in) ,e))]
+    [`(let ,x (: ,t) ,e)
+      (desugar `(let ,x (: ,t) ,e 'sole))]
+
+    [`(λ ,x (: ,t) ,e) `(λ ,x (: ,t) ,(desugar e))]
+    [`(,e1 ,e2 ,e3) `(,(desugar e1) ,(desugar e2) ,(desugar e3))]
+    [`(,e1 ,e2) `(,(desugar e1) ,(desugar e2))]
+    [e e]))
+
+(provide dbg err note print todo strip fmt desugar)
 ; todo: how to provide everything??
