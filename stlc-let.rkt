@@ -29,16 +29,6 @@
     [`(let ,id ,expr ,body) (interpret- `((λ ,id ,body) ,expr) ctx)]
     [expr (err (format "interpreting an unknown expression ~a" expr))]))
 
-;; removes typing annotations. this is helpful for interpretation.
-(define (strip expr)
-  (match expr
-    [`(,a ,b) `(,(strip a) ,(strip b))]
-    [`(λ ,id ,body) `(λ ,id ,(strip body))]
-    [`(let ,id ,expr ,body) `(let ,id ,(strip expr) ,(strip body))]
-    [`(λ ,id (: ,type) ,body) (strip `(λ ,id ,body))]
-    [`(let ,id (: ,type) ,expr ,body) (strip `(let ,id ,expr ,body))]
-    [expr expr]))
-
 ;;      (check Expr Type Table[Sym, Type]): Bool
 (define (check expr with [ctx #hash()])
   (match expr

@@ -66,15 +66,6 @@
 
     [expr (err (format "desugaring unknown expression ~a" expr))]))
 
-;; removes typing annotations
-(define (strip expr)
-  (match expr
-    [`(λ ,id (: ,type) ,body (: ,type)) `(λ ,(strip id) ,(strip body))]
-    [`(λ ,id ,body (: ,type)) `(λ ,(strip id) ,(strip body))]
-    [`(λ ,id (: ,type) ,body) `(λ ,(strip id) ,(strip body))]
-    [`(,a ,b) `(,(strip a) ,(strip b))]
-    [expr expr]))
-
 ;;      (check Expr Type Table[Sym, Type]): Bool
 (define (check expr with [Γ #hash()])
   (check- (desugar expr) with Γ))
@@ -183,30 +174,6 @@
     [`(set ,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
     [`(λ ,x (: ,τ) ,e) (level-body e (dict-set Γ x τ))] ; todo: should be 0?
     [`(,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]))
-
-;;      (fmt Expr) → String
-(define (fmt expr)
-  (match expr
-    ['⟨⟩ "⟨⟩"]
-    [`(λ ,id ,body) (format "λ~a.[~a]" id (fmt body))]
-    [`((λ ,id ,body) ,arg) (format "~a = ~a; ~a" id (fmt arg) (fmt body))]
-    [`(λ ,id (: ,type) ,body) (format "~a: ~a; ~a" id (fmt type) (fmt body))]
-    [`((λ ,id (: ,type) ,body) ,arg) (format "~a: ~a; ~a = ~a; ~a" id (fmt type) id (fmt arg) (fmt body))]
-    [`(λ ,id ,body ,env) (format "λ~a.[~a]" id (fmt body))]
-    [`(let ,id ,expr ,body) (format "~a = ~a; ~a" id (fmt expr) (fmt body))]
-    [`(let ,id (: ,type) ,expr ,body) (format "~a: ~a; ~a = ~a; ~a" id (fmt type) id (fmt expr) (fmt body))]
-    [`(set ,id ,expr ,body) (format "~a := ~a; ~a" id (fmt expr) (fmt body))]
-    [`(→ ,a ,b) (format "(~a → ~a)" (fmt a) (fmt b))]
-    [`(→ ,k ,a ,b) (format "(~a →~a ~a)" (fmt a) k (fmt b))]
-    [`(Ref ,a) (format "Ref ~a" (fmt a))]
-    [`(new ,a) (format "new ~a" (fmt a))]
-    [`(! ,a) (format "!~a" (fmt a))]
-    [`(,a ,b) (format "(~a ~a)" (fmt a) (fmt b))]
-    [(hash-table) "{}"] ; fixme lmao
-    [(hash-table (k v)) (format "{~a: ~a}" (fmt k) (fmt v))]
-    [(hash-table (k1 v1) (k2 v2)) (format "{~a: ~a; ~a: ~a}" (fmt k1) (fmt v1) (fmt k2) (fmt v2))]
-    [(hash-table (k1 v1) (k2 v2) (k3 v3)) (format "{~a: ~a; ~a: ~a; ~a: ~a}" (fmt k1) (fmt v1) (fmt k2) (fmt v2) (fmt k3) (fmt v3))]
-    [expr (format "~a" expr)]))
 
 ; simple diverging program in STLC-ref
 ; https://www.youtube.com/watch?v=XNgE8kBfSz8
