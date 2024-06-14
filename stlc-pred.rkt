@@ -3,40 +3,7 @@
 
 ;; The Simply-Typed Lambda Calculus with higher-order *predicative* references
 
-;;      (interpret Expr Table[Sym, Expr]) → Value
-(define (interpret expr [ctx #hash()] [heap (make-hash)])
-  (interpret- (strip (desugar expr)) ctx heap))
-(define (interpret- expr ctx heap)
-  (match expr
-    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)] ; x
-    [x #:when (dict-has-key? heap x) x] ; todo
-    [n #:when (natural? n) n]                     ; n
-    ['⟨⟩ '⟨⟩]                                      ; ⟨⟩
-
-    [`(λ ,id ,body) `(λ ,id ,body ,ctx)]          ; λx:τ.e
-
-    [`(new ,expr)                                 ; new e
-      (let ([address (gensym)])
-        (dict-set! heap address expr) address)]
-    [`(! ,id)                                     ; !e
-      (let ([id (interpret- id ctx heap)])
-        (if (dict-has-key? heap id)
-          (interpret- (dict-ref heap id) ctx heap)
-          (err (format "attempting to deref unknown reference ~a" id))))]
-    [`(set ,id ,expr)                             ; e := e
-      (let ([id (interpret- id ctx heap)])
-        (if (dict-has-key? heap id)
-          (dict-set! heap id (interpret- expr ctx heap))
-          (err (format "attempting to update unknown reference ~a" id))))
-      '⟨⟩]
-
-    [`(,body ,arg)                                ; e e
-      (match (interpret- body ctx heap)
-        [`(λ ,id ,body ,env)
-          (interpret- body (dict-set env id (interpret- arg ctx heap)) heap)]
-        [expr (err (format "attempting to interpret arg ~a applied to unknown expression ~a" arg expr))])]
-
-    [expr (err (format "interpreting an unknown expression ~a" expr))]))
+(require (only-in "stlc-ref.rkt" interpret))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
 (define (check expr with [Γ #hash()])
