@@ -1,52 +1,114 @@
 #lang racket
 (require "lib.rkt")
 
-;; the simply-typed lambda calculus with references
+;; The Simply-Typed Lambda Calculus with references
 
-(define (value? val)
-  (or (number? val) (string? val) (equal? 'sole val) (equal? 'true val) (equal? 'false val)))
-
-;;      (interpret Expr Table[Sym, Expr]): Value
-(define (interpret expr [ctx #hash()] [heap #hash()]) (interpret- (strip expr) ctx heap))
+;;      (interpret Expr Table[Sym, Expr] Table[Sym, Expr]): Value
+(define (interpret expr [ctx #hash()] [heap (make-hash)])
+  (interpret- (strip (desugar expr)) ctx heap))
 (define (interpret- expr ctx heap)
+  ; (print (format "interpret: ~a" (fmt expr)))
   (match expr
-    ; the simply-typed lambda calculus
-    [val #:when (value? val) val]           ; values. strings, bools, ints, whatever
-    [val #:when (symbol? val) (cond         ; identifiers.
-      [(dict-has-key? ctx val) (interpret- (dict-ref ctx val) ctx heap)]
-      [(dict-has-key? heap val) (interpret- (dict-ref heap val) ctx heap)]
-      [else val])] ; note: we do not distinguish between bound/unbound idents
-    [`(λ ,id ,body) `(λ ,id ,body ,ctx)]    ; first class functions. returns the λ + ctx
-    [`(λ ,id ,body ,env) `(λ ,id ,body ,env)]
+    ['sole 'sole]
+    [n #:when (natural? n) n]
+    [r #:when (dict-has-key? heap r) r]
+    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)]
 
-    ; references
-    [`(ref ,id) `(ref ,id)]                 ; refs. pointer to immutable bound value
-    [`(deref ,id)                           ; deref. accesses a stored reference from the heap
-      #:when (dict-has-key? heap id)
-      (interpret- (dict-ref heap id) ctx heap)]
-    [`(set ,id ,expr ,body)                 ; set. arbitrarily updates a reference to point elsewhere
-      ; note: MUST resolve the binding before applying!! !!
-      (interpret- body ctx (dict-set heap id (interpret- expr ctx heap)))]
+    [`(new ,e)
+      (let ([r (gensym)])
+      (dict-set! heap r e) r)]
+    [`(! ,e)
+      (let ([r (interpret- e ctx heap)])
+      (if (dict-has-key? heap r)
+        (interpret- (dict-ref heap r) ctx heap)
+        (err (format "attempting to deref unknown reference ~a" r))))]
+    [`(set ,e1 ,e2)
+      (let ([r (interpret- e1 ctx heap)])
+      (if (dict-has-key? heap r) (dict-set! heap r (interpret- e2 ctx heap))
+        (err (format "attempting to update unknown reference ~a" r))))
+      'sole]
 
-    ; function application
-    [`(,body ,arg)
-      (match (interpret- body ctx heap)
-        [`(λ ,id ,body)
-          (interpret- body (dict-set ctx id (interpret- arg ctx heap)) heap)]
-        [`(λ ,id ,body ,env)
-          (interpret- body (dict-set env id (interpret- arg ctx heap)) heap)]
-        [expr `(,expr ,(interpret- arg ctx heap))])]
+    [`(λ ,x ,e) `(λ ,x ,e ,ctx)]
+    [`(λ ,x ,e ,env) `(λ ,x ,e ,env)] ; ???
+    [`(,e1 ,e2)
+      (match (interpret- e1 ctx heap)
+        [`(λ ,x ,e1 ,env)
+          (interpret- e1 (dict-set env x (interpret- e2 ctx heap)) heap)]
+        [e1 (err (format "attempting to interpret arg ~a applied to unknown expression ~a" e2 e1))])]
 
-    ; desugaring and error handling
-    [`(let ,id ,expr ,body) (interpret- `((λ ,id ,body) ,expr) ctx heap)]
-    [`(deref ,id) (err (format "attempting to deref unknown reference ~a" id))]
-    [expr (err (format "interpreting an unknown expression ~a" expr))]))
+    [e (err (format "attempting to interpret unknown expression ~a" e))]))
+
+;;      (check Expr Type Table[Sym, Type]): Bool
+(define (check expr with [Γ #hash()])
+  (check- (desugar expr) with Γ))
+(define (check- expr with Γ)
+  ; (print (format "check: ~a" (fmt expr)))
+  (match* (expr with)
+    [('sole 'Unit) #t]
+    [(n 'Nat) #:when (natural? n) #t]
+    [(x _) #:when (dict-has-key? Γ x)
+      (equal? (dict-ref Γ x) with)]
+
+    [(`(new ,e) `(Ref ,t)) (check- e t Γ)]
+    [(`(! ,e) t) (check- e `(Ref ,t) Γ)]
+    [(`(set ,e1 ,e2) 'Unit)
+      (match (infer- e1 Γ)
+        [`(Ref ,t) (check- e2 t Γ)]
+        [t (err (format "attempting to update non-reference ~a: ~a" e1 t))])]
+
+    [(`(λ ,x (: ,t) ,e) `(→ ,t1 ,t2))
+      (and (equal? t t1) (check- e t2 (dict-set Γ x t1)))]
+    [(`(,e1 ,e2) t)
+      (match (infer- e1 Γ)
+        [`(→ ,t1 ,t2)
+          (and (equal? t2 t) (equal? t1 (infer- e2 Γ)))]
+        [t (err (format "expected → type on application body, got ~a" t))])]
+
+    [(e t) (err (format "checking an unknown expression ~a with type ~a" e t))]))
+
+;;      (infer Expr Table[Sym, Type]): Type
+(define (infer expr [Γ #hash()])
+  (infer- (desugar expr) Γ))
+(define (infer- expr Γ)
+  ; (print (format "infer: ~a" (fmt expr)))
+  (match expr
+    ['sole 'Unit]
+    [n #:when (natural? n) 'Nat]
+    [x #:when (dict-has-key? Γ x)
+      (dict-ref Γ x)]
+
+    [`(new ,e) `(Ref ,(infer- e Γ))]
+    [`(! ,e)
+      (match (infer- e Γ)
+        [`(Ref ,t) t]
+        [t (err "attempting to deref term not of Ref type!")])]
+    [`(set ,e1 ,e2)
+      (match (infer- e1 Γ)
+        [`(Ref ,t)
+          (if (check- e2 t Γ) 'Unit
+            (err (format "attempting to update ~a: ~a with term ~a: ~a of differing type"
+              e1 t e2 (infer- e2 Γ))))]
+        [t (err (format "attempting to update non-reference ~a: ~a" e1 t))])]
+
+    [`(λ ,x (: ,t) ,e)
+      `(→ ,t ,(infer- e (dict-set Γ x t)))]
+    [`(,e1 ,e2)
+      (match (infer- e1 Γ)
+        [`(→ ,t1 ,t2)
+          (if (check- e2 t1 Γ) t2
+            (err (format "inferred argument type ~a does not match arg ~a" t1 e2)))]
+        [t (err (format "expected → type on application body, got ~a" t))])]
+
+    [e (err (format "attempting to infer an unknown expression ~a" e))]))
+
+(provide interpret check infer)
 
 ; simple diverging program in STLC-ref
 ; https://www.youtube.com/watch?v=XNgE8kBfSz8
+#;
 (interpret '
   (let id (: (→ Nat Nat)) (λ x x)
-    (let r (: (Ref (→ Nat Nat))) (ref id)
-      (let f (: (→ Nat Nat)) (λ x ((deref r) x))
+    (let r (: (Ref (→ Nat Nat))) (new id)
+      (let f (: (→ Nat Nat)) (λ x ((! r) x))
         (set r f
           (f 0))))))

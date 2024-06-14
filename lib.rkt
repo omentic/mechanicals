@@ -72,7 +72,7 @@
     [`(ref ,e) (desugar `(new ,e))]
     [`(deref ,e) (desugar `(! ,e))]
     [`(set ,e1 ,e2 ,in)
-      (desugar `(let _ (set ,e1 ,e2) ,in))]
+      (desugar `(let _ (: Unit) (set ,e1 ,e2) ,in))]
 
     [`(let ,x (: (→ ,k ,a ,b)) (λ ,x ,e) ,in)
       (desugar `((λ ,x (: (→ ,k ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
