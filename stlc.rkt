@@ -26,8 +26,8 @@
     [(`(,e1 ,e2) t)
       (match (infer e1 Γ)
         [`(→ ,t1 ,t2) (and (equal? t2 t) (equal? t1 (infer e2 Γ)))]
-        [t (err (format "expected → type on application body, got ~a" t))])]
-    [(e t) (err (format "checking an unknown expression ~a with type ~a" e t))]))
+        [t #f])]
+    [(e t) #f]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr [Γ #hash()])

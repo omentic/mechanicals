@@ -54,7 +54,7 @@
     [(`(set ,e1 ,e2) 'Unit)
       (match (infer- e1 Γ)
         [`(Ref ,t) (check- e2 t Γ)]
-        [t (err (format "attempting to update non-reference ~a: ~a" e1 t))])]
+        [t #f])]
 
     [(`(λ ,x (: ,t) ,e) `(→ ,t1 ,t2))
       (and (equal? t t1) (check- e t2 (dict-set Γ x t1)))]
@@ -62,9 +62,9 @@
       (match (infer- e1 Γ)
         [`(→ ,t1 ,t2)
           (and (equal? t2 t) (equal? t1 (infer- e2 Γ)))]
-        [t (err (format "expected → type on application body, got ~a" t))])]
+        [t #f])]
 
-    [(e t) (err (format "checking an unknown expression ~a with type ~a" e t))]))
+    [(e t) #f]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr [Γ #hash()])

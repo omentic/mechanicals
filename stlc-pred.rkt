@@ -21,7 +21,7 @@
     [(`(set ,e1 ,e2) 'Unit)                 ; ↝ Γ ⊢ e1 := e2: Unit
       (match (infer- e1 Γ)
         [`(Ref ,t) (check- e2 t Γ)]         ; Γ ⊢ e1: Ref τ, Γ ⊢ e2: τ
-        [t (err (format "attempting to update non-reference ~a: ~a" e1 t))])]
+        [t #f])]
 
     [(`(λ ,x (: ,t) ,e) `(→ ,k ,t1 ,t2))    ; ↝ Γ ⊢ λx: τ1.e: τ1 →k τ2
       (and
@@ -32,10 +32,9 @@
       (match (infer- e1 Γ)
         [`(→ ,k ,t1 ,t2)                                  ; Γ ⊢ e1: τ1 →k τ2
           (and (equal? t2 t) (equal? t1 (infer- e2 Γ)))]  ; Γ ⊢ e2: τ1
-        [t (err (format "expected → type on application body, got ~a" t))])]
+        [t #f])]
 
-    [(`(λ ,x (: ,t) ,e) `(→ ,t1 ,t2)) (err "you forgot to add a level annotation dummy")]
-    [(e t) (err (format "checking an unknown expression ~a with type ~a" e with))]))
+    [(e t) #f]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr [Γ #hash()])
