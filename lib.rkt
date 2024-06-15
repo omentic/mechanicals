@@ -35,11 +35,11 @@
 ;; removes typing annotations
 (define (strip expr)
   (match expr
-    [`(λ ,id (: ,type) ,body (: ,type)) `(λ ,(strip id) ,(strip body))]
-    [`(λ ,id ,body (: ,type)) `(λ ,(strip id) ,(strip body))]
-    [`(λ ,id (: ,type) ,body) `(λ ,(strip id) ,(strip body))]
-    [`(,a ,b) `(,(strip a) ,(strip b))]
-    [expr expr]))
+    [`(λ ,x (: ,t) ,e (: ,t)) `(λ ,(strip x) ,(strip e))]
+    [`(λ ,x ,e (: ,t)) `(λ ,(strip x) ,(strip e))]
+    [`(λ ,x (: ,t) ,e) `(λ ,(strip x) ,(strip e))]
+    [`(,e1 ,e2) `(,(strip e1) ,(strip e2))]
+    [e e]))
 
 ;;      (fmt Expr) → String
 (define (fmt expr)
@@ -71,17 +71,18 @@
     ['⟨⟩ 'sole]
     [`(ref ,e) (desugar `(new ,e))]
     [`(deref ,e) (desugar `(! ,e))]
+
     [`(set ,e1 ,e2 ,in)
       (desugar `(let _ (: Unit) (set ,e1 ,e2) ,in))]
+    [`(let ,id (: ,t) ,e)
+      (desugar `(let ,id (: ,t) ,e 'sole))]
 
-    [`(let ,x (: (→ ,k ,a ,b)) (λ ,x ,e) ,in)
-      (desugar `((λ ,x (: (→ ,k ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
-    [`(let ,x (: (→ ,a ,b)) (λ ,x ,e) ,in)
-      (desugar `((λ ,x (: (→ ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
-    [`(let ,x (: ,t) ,e ,in)
-      (desugar `((λ ,x (: ,t) ,in) ,e))]
-    [`(let ,x (: ,t) ,e)
-      (desugar `(let ,x (: ,t) ,e 'sole))]
+    [`(let ,id (: (→ ,k ,a ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ ,id (: (→ ,k ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
+    [`(let ,id (: (→ ,a ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ ,id (: (→ ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
+    [`(let ,id (: ,t) ,e ,in)
+      (desugar `((λ ,id (: ,t) ,in) ,e))]
 
     [`(λ ,x (: ,t) ,e) `(λ ,x (: ,t) ,(desugar e))]
     [`(,e1 ,e2 ,e3) `(,(desugar e1) ,(desugar e2) ,(desugar e3))]
