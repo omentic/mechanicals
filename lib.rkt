@@ -38,6 +38,8 @@
     [`(λ ,x (: ,t) ,e (: ,t)) `(λ ,(strip x) ,(strip e))]
     [`(λ ,x ,e (: ,t)) `(λ ,(strip x) ,(strip e))]
     [`(λ ,x (: ,t) ,e) `(λ ,(strip x) ,(strip e))]
+    [`(type ,t1 ,t2 ,in) (strip in)]
+    [`(,e (: ,t)) (strip e)]
     [`(,e1 ,e2) `(,(strip e1) ,(strip e2))]
     [e e]))
 
