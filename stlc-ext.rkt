@@ -15,6 +15,16 @@
     [b #:when (boolean? b) b]
     [x #:when (dict-has-key? ctx x) (dict-ref ctx x)]
 
+    [`(inc ,e)
+      (match (interpret- e ctx heap)
+        [n #:when (natural? n) (+ n 1)]
+        [e (format "incrementing an unknown value ~a" e)])]
+    [`(if ,c ,e1 ,e2)
+      (match (interpret- c ctx heap)
+        ['#t (interpret- e1 ctx heap)]
+        ['#f (interpret- e2 ctx heap)]
+        [e (err (format "calling if on unknown expression ~a" e))])]
+
     [`(pair ,e1 ,e2)
       `(pair ,(interpret- e1 ctx) ,(interpret- e2 ctx))]
     [`(car ,e)
@@ -64,7 +74,6 @@
 (define (check expr with [Γ #hash()])
   (check- (desugar expr) with Γ))
 (define (check- expr with Γ)
-  ; (print (format "check: ~a" (fmt expr)))
   (let ([with (if (dict-has-key? Γ with) (dict-ref Γ with) with)])
   (match* (expr with)
     [('sole 'Unit) #t]
