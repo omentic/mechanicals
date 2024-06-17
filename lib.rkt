@@ -86,6 +86,9 @@
     [`(let ,id (: ,t) ,e ,in)
       (desugar `((λ ,id (: ,t) ,in) ,e))]
 
+    [`(letrec ,x (: ,t) ,e ,in)
+      (desugar `(let ,x (: ,t) (fix (λ ,x (: ,t) ,e)) ,in))]
+
     [`(λ ,x (: ,t) ,e) `(λ ,x (: ,t) ,(desugar e))]
     [`(,e1 ,e2 ,e3) `(,(desugar e1) ,(desugar e2) ,(desugar e3))]
     [`(,e1 ,e2) `(,(desugar e1) ,(desugar e2))]

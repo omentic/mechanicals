@@ -8,7 +8,7 @@ For an introduction, see [*Explaining Lisp's quoting without getting tangled*](q
 * [~] LC: The untyped lambda calculus.
 * [x] STLC: The simply-typed lambda calculus.
 * [x] STLC-ext: Simple extensions. Sums, products, lists, ascryptions.
-* [ ] STLC-fix: General recursion.
+* [x] STLC-fix: General recursion.
 * [ ] STLC-sub: Subtyping. Structural records, intersective unions, implicit typeclasses, ⊤, ⊥.
 * [ ] STLC-rec: Recursive types. Also sums, products, ascryption.
 * [x] STLC-ref: References.
@@ -16,9 +16,9 @@ For an introduction, see [*Explaining Lisp's quoting without getting tangled*](q
 * [ ] STLC-imp: Higher-order *impredicative* references. Terminating.
 * [ ] STLC-rc: References with reference counting.
 * [ ] STLC-gc: References with a tracing garbage collector.
-* [ ] STLC-own: References with Rust-style ownership.
-* [ ] STLC-eff: Effects.
-* [ ] STLC-class: Typeclasses
+* [ ] STLC-own: References with first-class ownership, Rust-style.
+* [ ] STLC-lent: References with second-class ownership.
+* [ ] STLC-dep: Dependent types with normalization by evaluation.
 * [~] SKI: The SKI combinator calculus.
 * [~] Iota, Jot, Zot: Implementations of Chris Barker's languages.
 * [~] Aviary: Various combinators and constructions of equivalence.
