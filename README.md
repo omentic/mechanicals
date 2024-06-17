@@ -13,7 +13,7 @@ For an introduction, see [*Explaining Lisp's quoting without getting tangled*](q
 * [ ] STLC-rec: Recursive types. Also sums, products, ascryption.
 * [x] STLC-ref: References.
 * [x] STLC-pred: Higher-order *predicative* references. Terminating.
-* [ ] STLC-imp: Higher-order *impredicative* references. Terminating.
+* [x] STLC-imp: Higher-order *impredicative* references. Terminating.
 * [ ] STLC-rc: References with reference counting.
 * [ ] STLC-gc: References with a tracing garbage collector.
 * [ ] STLC-own: References with first-class ownership, Rust-style.
