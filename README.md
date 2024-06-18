@@ -9,8 +9,8 @@ For an introduction, see [*Explaining Lisp's quoting without getting tangled*](q
 * [x] STLC: The simply-typed lambda calculus.
 * [x] STLC-ext: Simple extensions. Sums, products, lists, ascryptions.
 * [x] STLC-fix: General recursion.
+* [x] STLC-rec: Iso-recursive types.
 * [ ] STLC-sub: Subtyping. Structural records, intersective unions, implicit typeclasses, ⊤, ⊥.
-* [ ] STLC-rec: Recursive types. Also sums, products, ascryption.
 * [x] STLC-ref: References.
 * [x] STLC-pred: Higher-order *predicative* references. Terminating.
 * [x] STLC-imp: Higher-order *impredicative* references. Terminating.
