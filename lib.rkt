@@ -34,6 +34,15 @@
 ; todo: write a fmt alias to format
 ; todo: write a namer
 
+(define (any? proc lst)
+  (foldl (λ (x acc) (if (proc x) #t acc)) #f lst))
+
+(define (all? proc lst)
+  (foldl (λ (x acc) (if (proc x) acc #f)) #t lst))
+
+(define (inc i) (+ i 1))
+(define (dec i) (- i 1))
+
 ;; removes typing annotations
 (define (strip expr)
   (match expr

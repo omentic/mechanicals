@@ -12,8 +12,8 @@
     [`(λ ,x ,e) `(λ ,x ,e ,ctx)]
     [`(,e1 ,e2)
       (match (interpret- e1 ctx)
-        [`(λ ,x ,e1 ,env) (interpret- e1 (dict-set env x (interpret- e2 ctx)))]
-        [e1 `(,e1 ,(interpret- e2 ctx))])]
+        [`(λ ,x ,e ,env) (interpret- e (dict-set env x (interpret- e2 ctx)))]
+        [e `(,e ,(interpret- e2 ctx))])]
     [e e]))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool

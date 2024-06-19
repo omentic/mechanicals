@@ -61,12 +61,12 @@
         [`(cons ,e1 ,e2) (interpret- e2 ctx)]
         [e (err (format "calling tail on unknown expression ~a" e))])]
 
-    [`(λ ,id ,body) `(λ ,id ,body ,ctx)]
-    [`(,body ,arg)
-      (match (interpret- body ctx)
-        [`(λ ,id ,body ,env)
-          (interpret- body (dict-set env id (interpret- arg ctx)))]
-        [e (err (format "applying arg ~a to unknown expression ~a" arg e))])]
+    [`(λ ,x ,e) `(λ ,x ,e ,ctx)]
+    [`(,e1 ,e2)
+      (match (interpret- e1 ctx)
+        [`(λ ,x ,e ,env)
+          (interpret- e (dict-set env x (interpret- e2 ctx)))]
+        [e (err (format "applying arg ~a to unknown expression ~a" e2 e))])]
 
     [e (err (format "interpreting an unknown expression ~a" e))]))
 

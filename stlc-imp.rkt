@@ -3,6 +3,28 @@
 
 ;; The Simply-Typed Lambda Calculus with higher-order *impredicative* references
 
+; Γ, x: τ₁ ⊢ e: τ₂    k > max-level(Γ, τ₁, τ₂)
+; ---------------------------------------------
+; Γ ⊢ λx:τ₁.e : τ₁ →ᵏ τ₂
+
+; Γ ⊢ e₁: τ₁ →ᵏ τ₂    Γ ⊢ e₂: τ₁
+; --------------------------------
+; Γ ⊢ (e₁ e₂): τ₂
+
+; --------------------------
+; Nat::Type₀, Unit::Type₀
+
+; τ::Type₀
+; ---------------
+; Ref τ :: Type₀
+
+; τ::Typeᵢ, i ≥ 0
+; ---------------
+; Ref τ :: Typeᵢ₊₁
+
+; τ₁::Typeᵢ, τ₂::Typeⱼ, k > max-level(τ₁, τ₂)
+; -----------------------------------------
+; τ₁ →ᵏ τ₂ :: Typeₖ
 (require (only-in "stlc-ref.rkt" interpret))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
@@ -93,7 +115,7 @@
         k)]
     [`(Ref ,t)
       (let ([k (level-type t)])
-      (if (zero? k) 0 ((+ 1 k))))] ; KNOB
+      (if (zero? k) 0 (+ 1 k)))] ; KNOB
     [t (err (format "attempting to infer the level of unknown type ~a" t))]))
 
 ;;      (level-body Expr Table[Sym, Type]): Natural

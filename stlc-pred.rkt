@@ -3,6 +3,25 @@
 
 ;; The Simply-Typed Lambda Calculus with higher-order *predicative* references
 
+; Γ, x: τ₁ ⊢ e: τ₂    k ≥ max-level(Γ, τ₁, τ₂)
+; ---------------------------------------------
+; Γ ⊢ λx:τ₁.e : τ₁ →ᵏ τ₂
+
+; Γ ⊢ e₁: τ₁ →ᵏ τ₂    Γ ⊢ e₂: τ₁
+; --------------------------------
+; Γ ⊢ (e₁ e₂): τ₂
+
+; --------------------------
+; Nat::Type₀, Unit::Type₀
+
+; τ::Typeᵢ
+; -------------
+; Ref τ :: Typeᵢ₊₁
+
+; τ₁::Typeᵢ, τ₂::Typeⱼ, k ≥ max-level(τ₁, τ₂)
+; -----------------------------------------
+; τ₁ →ᵏ τ₂ :: Typeₖ
+
 (require (only-in "stlc-ref.rkt" interpret))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
@@ -11,27 +30,27 @@
 (define (check- expr with Γ)
   ; (print (format "check: ~a" (fmt expr)))
   (match* (expr with)
-    [('sole 'Unit) #t]                      ; ↝ Γ ⊢ ⟨⟩: Unit
-    [(n 'Nat) #:when (natural? n) #t]       ; ↝ Γ ⊢ n: Nat
-    [(x _) #:when (dict-has-key? Γ x)       ; x: τ ∈ Γ → Γ ⊢ x: τ
+    [('sole 'Unit) #t]
+    [(n 'Nat) #:when (natural? n) #t]
+    [(x _) #:when (dict-has-key? Γ x)
       (equal? (dict-ref Γ x) with)]
 
-    [(`(new ,e) `(Ref ,t)) (check- e t Γ)]  ; Γ ⊢ e: τ → Γ ⊢ new e: Ref τ
-    [(`(! ,e) t) (check- e `(Ref ,t) Γ)]    ; Γ ⊢ e: Ref τ → Γ ⊢ !e: τ
-    [(`(set ,e1 ,e2) 'Unit)                 ; ↝ Γ ⊢ e1 := e2: Unit
+    [(`(new ,e) `(Ref ,t)) (check- e t Γ)]
+    [(`(! ,e) t) (check- e `(Ref ,t) Γ)]
+    [(`(set ,e1 ,e2) 'Unit)
       (match (infer- e1 Γ)
-        [`(Ref ,t) (check- e2 t Γ)]         ; Γ ⊢ e1: Ref τ, Γ ⊢ e2: τ
+        [`(Ref ,t) (check- e2 t Γ)]
         [t #f])]
 
-    [(`(λ ,x (: ,t) ,e) `(→ ,k ,t1 ,t2))    ; ↝ Γ ⊢ λx: τ1.e: τ1 →k τ2
+    [(`(λ ,x (: ,t) ,e) `(→ ,k ,t1 ,t2))
       (and
         (equal? t t1)
-        (>= k (max-level e (dict-set Γ x t1) t1 t2))  ; k ≥ max-level(Γ, τ1, τ2) (KNOB)
-        (check- e t2 (dict-set Γ x t1)))]             ; Γ, x: τ1 ⊢ e: τ2
-    [(`(,e1 ,e2) t)                                   ; ↝ Γ ⊢ (e1 e2): τ2
+        (>= k (max-level e (dict-set Γ x t1) t1 t2))  ; (KNOB)
+        (check- e t2 (dict-set Γ x t1)))]
+    [(`(,e1 ,e2) t)
       (match (infer- e1 Γ)
-        [`(→ ,k ,t1 ,t2)                                  ; Γ ⊢ e1: τ1 →k τ2
-          (and (equal? t2 t) (equal? t1 (infer- e2 Γ)))]  ; Γ ⊢ e2: τ1
+        [`(→ ,k ,t1 ,t2)
+          (and (equal? t2 t) (equal? t1 (infer- e2 Γ)))]
         [t #f])]
 
     [(e t) #f]))
@@ -42,33 +61,33 @@
 (define (infer- expr Γ)
   ; (print (format "infer: ~a" (fmt expr)))
   (match expr
-    ['sole 'Unit]                       ; ↝ Γ ⊢ ⟨⟩: Unit
-    [n #:when (natural? n) 'Nat]        ; ↝ Γ ⊢ n: Nat
-    [x #:when (dict-has-key? Γ x)       ; x: τ ∈ Γ
-      (dict-ref Γ x)]                   ; ↝ Γ ⊢ x: τ
+    ['sole 'Unit]
+    [n #:when (natural? n) 'Nat]
+    [x #:when (dict-has-key? Γ x)
+      (dict-ref Γ x)]
 
-    [`(new ,e) `(Ref ,(infer- e Γ))]    ; Γ ⊢ e: τ → Γ ⊢ new e: Ref τ
+    [`(new ,e) `(Ref ,(infer- e Γ))]
     [`(! ,e)
       (match (infer- e Γ)
-        [`(Ref ,t) t]                   ; Γ ⊢ e: Ref τ → Γ ⊢ !e: τ
+        [`(Ref ,t) t]                   ; Γ ⊢ e: Ref t → Γ ⊢ !e: t
         [t (err "attempting to deref term not of Ref type!")])]
     [`(set ,e1 ,e2)
       (match (infer- e1 Γ)
-        [`(Ref ,t)                      ; Γ ⊢ e1: Ref τ, Γ ⊢ e2: τ
+        [`(Ref ,t)                      ; Γ ⊢ e1: Ref t, Γ ⊢ e2: t
           (if (check- e2 t Γ) 'Unit     ; ↝ Γ ⊢ e1 := e2: Unit
             (err (format "attempting to update ~a: ~a with term ~a: ~a of differing type"
               e1 t e2 (infer- e2 Γ))))]
         [t (err (format "attempting to update non-reference ~a: ~a" e1 t))])]
 
     [`(λ ,x (: ,t1) ,e)
-      (let ([t2 (infer- e (dict-set Γ x t1))])            ; Γ, x: τ1 ⊢ e: τ2
-        (let ([k (max-level e (dict-set Γ x t1) t1 t2)])  ; k ≥ max-level(Γ, τ1, τ2) (KNOB)
-          `(→ ,k ,t1 ,t2)))]                             ; ↝ Γ ⊢ λx: τ1.e: τ1 →k τ2
+      (let ([t2 (infer- e (dict-set Γ x t1))])            ; Γ, x: t1 ⊢ e: t2
+        (let ([k (max-level e (dict-set Γ x t1) t1 t2)])  ; k ≥ max-level(Γ, t1, t2) (KNOB)
+          `(→ ,k ,t1 ,t2)))]                             ; ↝ Γ ⊢ λx: t1.e: t1 →k t2
     [`(,e1 ,e2)
       (match (infer- e1 Γ)
-        [`(→ ,k ,t1 ,t2)                ; Γ ⊢ e1: τ1 →k τ2
-          (if (check- e2 t1 Γ) t2       ; Γ ⊢ e2: τ1 ↝ Γ ⊢ (e1 e2): τ2
-            (err (format "inferred argument type ~a does not match arg ~a" t1 e2)))]
+        [`(→ ,k ,t1 ,t2)                ; Γ ⊢ e1: t1 →k t2
+          (if (check- e2 t1 Γ) t2       ; Γ ⊢ e2: t1 ↝ Γ ⊢ (e1 e2): t2
+            (err (format "inferred argument type ~a does not match arg ~a of type ~a" t1 e2 (infer- e2 Γ))))]
         [t (err (format "expected → type on application body, got ~a" t))])]
 
     [e (err (format "attempting to infer an unknown expression ~a" e))]))
