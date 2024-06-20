@@ -4,18 +4,18 @@
 ;; The Simply-Typed Lambda Calculus, with let sugar and some base types
 
 ;;      (interpret Expr Table[Sym, Expr]): Value
-(define (interpret expr [ctx #hash()])
-  (interpret- (strip (desugar expr)) ctx))
-(define (interpret- expr ctx)
+(define (interpret expr [Γ #hash()])
+  (interpret- (strip (desugar expr)) Γ))
+(define (interpret- expr Γ)
   (match expr
     ['sole 'sole]
     [n #:when (natural? n) n]
-    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)]
-    [`(λ ,x ,e) `(λ ,x ,e ,ctx)]
+    [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
+    [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(,e1 ,e2)
-      (match (interpret- e1 ctx)
-        [`(λ ,x ,e1 ,env) (interpret- e1 (dict-set env x (interpret- e2 ctx)))]
-        [e1 `(,e1 ,(interpret- e2 ctx))])]
+      (match (interpret- e1 Γ)
+        [`(λ ,x ,e1 ,env) (interpret- e1 (dict-set env x (interpret- e2 Γ)))]
+        [e1 `(,e1 ,(interpret- e2 Γ))])]
     [e e]))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool

@@ -5,67 +5,67 @@
 ;; Unit/String/Natural/Boolean, pairs, sums, lists, ascryption
 
 ;;      (interpret Expr Table[Sym, Expr]): Value
-(define (interpret expr [ctx #hash()])
-  (interpret- (strip (desugar expr)) ctx))
-(define (interpret- expr ctx heap)
+(define (interpret expr [Γ #hash()])
+  (interpret- (strip (desugar expr)) Γ))
+(define (interpret- expr Γ Σ)
   (match expr
     ['sole 'sole]
     [s #:when (string? s) s]
     [n #:when (natural? n) n]
     [b #:when (boolean? b) b]
-    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)]
+    [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
     [`(inc ,e)
-      (match (interpret- e ctx heap)
+      (match (interpret- e Γ Σ)
         [n #:when (natural? n) (+ n 1)]
         [e (format "incrementing an unknown value ~a" e)])]
     [`(if ,c ,e1 ,e2)
-      (match (interpret- c ctx heap)
-        ['#t (interpret- e1 ctx heap)]
-        ['#f (interpret- e2 ctx heap)]
+      (match (interpret- c Γ Σ)
+        ['#t (interpret- e1 Γ Σ)]
+        ['#f (interpret- e2 Γ Σ)]
         [e (err (format "calling if on unknown expression ~a" e))])]
 
     [`(pair ,e1 ,e2)
-      `(pair ,(interpret- e1 ctx) ,(interpret- e2 ctx))]
+      `(pair ,(interpret- e1 Γ) ,(interpret- e2 Γ))]
     [`(car ,e)
-      (match (interpret- e ctx)
+      (match (interpret- e Γ)
         [`(pair ,e1 ,e2) e1]
         [e (err (format "calling car on unknown expression ~a" e))])]
     [`(cdr ,e)
-      (match (interpret- e ctx)
+      (match (interpret- e Γ)
         [`(pair ,e1 ,e2) e2]
         [e (err (format "calling cdr on unknown expression ~a" e))])]
 
-    [`(inl ,e) `(inl ,(interpret- e ctx))]
-    [`(inr ,e) `(inr ,(interpret- e ctx))]
+    [`(inl ,e) `(inl ,(interpret- e Γ))]
+    [`(inr ,e) `(inr ,(interpret- e Γ))]
     [`(case ,e ,f1 ,f2)
-      (match (interpret- e ctx)
-        [`(inl ,e) (interpret- `(,f1 ,e) ctx)]
-        [`(inr ,e) (interpret- `(,f2 ,e) ctx)]
+      (match (interpret- e Γ)
+        [`(inl ,e) (interpret- `(,f1 ,e) Γ)]
+        [`(inr ,e) (interpret- `(,f2 ,e) Γ)]
         [e (err (format "calling case on unknown expression ~a" e))])]
 
     ['nil 'nil]
     [`(nil? ,e)
-      (match (interpret- e ctx)
+      (match (interpret- e Γ)
         ['nil '#t]
         [`(cons ,e1 ,e2) '#f]
         [e (err (format "calling isnil on unknown expression ~a" e))])]
     [`(cons ,e1 ,e2)
-     `(cons ,(interpret- e1 ctx) ,(interpret- e2 ctx))]
+     `(cons ,(interpret- e1 Γ) ,(interpret- e2 Γ))]
     [`(head ,e)
-      (match (interpret- e ctx)
-        [`(cons ,e1 ,e2) (interpret- e1 ctx)]
+      (match (interpret- e Γ)
+        [`(cons ,e1 ,e2) (interpret- e1 Γ)]
         [e (err (format "calling head on unknown expression ~a" e))])]
     [`(tail ,e)
-      (match (interpret- e ctx)
-        [`(cons ,e1 ,e2) (interpret- e2 ctx)]
+      (match (interpret- e Γ)
+        [`(cons ,e1 ,e2) (interpret- e2 Γ)]
         [e (err (format "calling tail on unknown expression ~a" e))])]
 
-    [`(λ ,x ,e) `(λ ,x ,e ,ctx)]
+    [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(,e1 ,e2)
-      (match (interpret- e1 ctx)
+      (match (interpret- e1 Γ)
         [`(λ ,x ,e ,env)
-          (interpret- e (dict-set env x (interpret- e2 ctx)))]
+          (interpret- e (dict-set env x (interpret- e2 Γ)))]
         [e (err (format "applying arg ~a to unknown expression ~a" e2 e))])]
 
     [e (err (format "interpreting an unknown expression ~a" e))]))

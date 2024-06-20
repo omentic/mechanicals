@@ -4,27 +4,27 @@
 ;; The Simply-Typed Lambda Calculus, with general recursion
 
 ;;      (interpret Expr Table[Sym, Expr]): Value
-(define (interpret expr [ctx #hash()])
-  (interpret- (strip (desugar expr)) ctx))
-(define (interpret- expr ctx)
+(define (interpret expr [Γ #hash()])
+  (interpret- (strip (desugar expr)) Γ))
+(define (interpret- expr Γ)
   (match expr
     ['sole 'sole]
     [n #:when (natural? n) n]
-    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)]
+    [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
     [`(fix ,e)
-      (match (interpret- e ctx)
+      (match (interpret- e Γ)
         [`(λ ,x ,e ,env)
-          ; FIXME: unsure what should be ctx and what should be env
-          (interpret- e (dict-set ctx x `(fix (λ ,x ,e ,ctx))))]
+          ; FIXME: unsure what should be Γ and what should be env
+          (interpret- e (dict-set Γ x `(fix (λ ,x ,e ,Γ))))]
         [e (err (format "applying fix to unknown expression ~a" e))])]
 
-    [`(λ ,id ,body) `(λ ,id ,body ,ctx)]
+    [`(λ ,id ,body) `(λ ,id ,body ,Γ)]
     [`(λ ,id ,body ,env) `(λ ,id ,body ,env)]
     [`(,body ,arg)
-      (match (interpret- body ctx)
+      (match (interpret- body Γ)
         [`(λ ,id ,body ,env)
-          (interpret- body (dict-set env id (interpret- arg ctx)))]
+          (interpret- body (dict-set env id (interpret- arg Γ)))]
         [e (err (format "applying arg ~a to unknown expression ~a" arg e))])]
 
     [e (err (format "interpreting an unknown expression ~a" e))]))

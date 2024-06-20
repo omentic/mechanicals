@@ -4,16 +4,16 @@
 ;; The Simply-Typed Lambda Calculus
 
 ;;      (interpret Expr Table[Sym, Expr]): Value
-(define (interpret expr [ctx #hash()])
-  (interpret- (strip expr) ctx))
-(define (interpret- expr ctx)
+(define (interpret expr [Γ #hash()])
+  (interpret- (strip expr) Γ))
+(define (interpret- expr Γ)
   (match expr
-    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)]
-    [`(λ ,x ,e) `(λ ,x ,e ,ctx)]
+    [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
+    [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(,e1 ,e2)
-      (match (interpret- e1 ctx)
-        [`(λ ,x ,e ,env) (interpret- e (dict-set env x (interpret- e2 ctx)))]
-        [e `(,e ,(interpret- e2 ctx))])]
+      (match (interpret- e1 Γ)
+        [`(λ ,x ,e ,env) (interpret- e (dict-set env x (interpret- e2 Γ)))]
+        [e `(,e ,(interpret- e2 Γ))])]
     [e e]))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool

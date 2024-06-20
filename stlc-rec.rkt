@@ -12,22 +12,22 @@
 ; Γ ⊢ unfold [μx.t] e: [x ↦ μx.t] t
 
 ;;      (interpret Expr Table[Sym, Expr]): Value
-(define (interpret expr [ctx #hash()])
-  (interpret- (strip (desugar expr)) ctx))
-(define (interpret- expr ctx)
+(define (interpret expr [Γ #hash()])
+  (interpret- (strip (desugar expr)) Γ))
+(define (interpret- expr Γ)
   (match expr
     ['sole 'sole]
     [n #:when (natural? n) n]
-    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)]
+    [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
     [`(fold ,t ,e) `(fold ,t ,(interpret- e))]
     [`(unfold ,t ,e) `(unfold ,t ,(interpret- e))]
 
-    [`(λ ,x ,e) `(λ ,x ,e ,ctx)]
+    [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(,e1 ,e2)
-      (match (interpret- e1 ctx)
+      (match (interpret- e1 Γ)
         [`(λ ,x ,e ,env)
-          (interpret- e (dict-set env x (interpret- e2 ctx)))]
+          (interpret- e (dict-set env x (interpret- e2 Γ)))]
         [e (err (format "applying arg ~a to unknown expression ~a" e2 e))])]
 
     [e (err (format "interpreting an unknown expression ~a" e))]))

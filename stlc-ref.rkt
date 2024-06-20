@@ -4,36 +4,36 @@
 ;; The Simply-Typed Lambda Calculus with references
 
 ;;      (interpret Expr Table[Sym, Expr] Table[Sym, Expr]): Value
-(define (interpret expr [ctx #hash()] [heap (make-hash)])
-  (interpret- (strip (desugar expr)) ctx heap))
-(define (interpret- expr ctx heap)
+(define (interpret expr [Γ #hash()] [Σ (make-hash)])
+  (interpret- (strip (desugar expr)) Γ Σ))
+(define (interpret- expr Γ Σ)
   ; (print (format "interpret: ~a" (fmt expr)))
   (match expr
     ['sole 'sole]
     [n #:when (natural? n) n]
-    [r #:when (dict-has-key? heap r) r]
-    [x #:when (dict-has-key? ctx x) (dict-ref ctx x)]
+    [r #:when (dict-has-key? Σ r) r]
+    [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
     [`(new ,e)
       (let ([r (gensym)])
-      (dict-set! heap r e) r)]
+      (dict-set! Σ r e) r)]
     [`(! ,e)
-      (let ([r (interpret- e ctx heap)])
-      (if (dict-has-key? heap r)
-        (interpret- (dict-ref heap r) ctx heap)
+      (let ([r (interpret- e Γ Σ)])
+      (if (dict-has-key? Σ r)
+        (interpret- (dict-ref Σ r) Γ Σ)
         (err (format "attempting to deref unknown reference ~a" r))))]
     [`(set ,e1 ,e2)
-      (let ([r (interpret- e1 ctx heap)])
-      (if (dict-has-key? heap r) (dict-set! heap r (interpret- e2 ctx heap))
+      (let ([r (interpret- e1 Γ Σ)])
+      (if (dict-has-key? Σ r) (dict-set! Σ r (interpret- e2 Γ Σ))
         (err (format "attempting to update unknown reference ~a" r))))
       'sole]
 
-    [`(λ ,x ,e) `(λ ,x ,e ,ctx)]
+    [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(λ ,x ,e ,env) `(λ ,x ,e ,env)] ; ???
     [`(,e1 ,e2)
-      (match (interpret- e1 ctx heap)
+      (match (interpret- e1 Γ Σ)
         [`(λ ,x ,e1 ,env)
-          (interpret- e1 (dict-set env x (interpret- e2 ctx heap)) heap)]
+          (interpret- e1 (dict-set env x (interpret- e2 Γ Σ)) Σ)]
         [e1 (err (format "attempting to interpret arg ~a applied to unknown expression ~a" e2 e1))])]
 
     [e (err (format "attempting to interpret unknown expression ~a" e))]))
