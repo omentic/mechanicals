@@ -133,26 +133,6 @@
 (check-equal? (fresh-next 'zaa) 'zab)
 (check-equal? (fresh-next 'azz) 'baa)
 
-;; checks if two expressions are equivalent up to α-renaming
-(define (equiv? e1 e2 [ctx1 #hash()] [ctx2 #hash()])
-  (match* (e1 e2)
-    [(x1 x2) #:when (dict-has-key? ctx1 x1)
-      (equiv? (dict-ref ctx1 x1) x2 ctx1 ctx2)]
-    [(x1 x2) #:when (dict-has-key? ctx2 x2)
-      (equiv? x1 (dict-ref ctx2 x2) ctx1 ctx2)]
-    [(`(λ ,x1 (: _) ,e1) `(λ ,x2 (: _) ,e2)) ; todo: merge these into one
-      (let ([name gensym])
-      (equiv? e1 e2 (dict-set ctx1 x1 name) (dict-set ctx2 x2 name)))]
-    [(`(λ ,x1 ,e1) `(λ ,x2 ,e2))
-      (let ([name gensym])
-      (equiv? e1 e2 (dict-set ctx1 x1 name) (dict-set ctx2 x2 name)))]
-    [(`(,l1 ...) `(,l2 ...))
-      (foldl (λ (x1 x2 acc) (if (equiv? x1 x2 ctx1 ctx2) acc #f)) #t l1 l2)]
-    [(v1 v2) (equal? v1 v2)]))
-(check-true (equiv? '(λ a a) '(λ b b)))
-(check-true (equiv? '(λ a (λ b a)) '(λ b (λ a b))))
-(check-true (equiv? '(λ a (λ b (λ c (a (b c))))) '(λ c (λ a (λ b (c (a b)))))))
-
 ;; normalizes an expression into binding variables descending
 ;;      (α-convert Expr Table[Old New] Set[New])
 (define (α-convert expr [used #hash()])

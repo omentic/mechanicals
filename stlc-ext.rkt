@@ -1,5 +1,7 @@
 #lang racket
 (require "lib.rkt")
+(require rackunit)
+(provide (all-defined-out))
 
 ;; The Simply-Typed Lambda Calculus, with simple extensions
 ;; Unit/String/Natural/Boolean, pairs, sums, lists, ascryption
@@ -74,7 +76,7 @@
 (define (check expr with [Γ #hash()])
   (check- (desugar expr) with Γ))
 (define (check- expr with Γ)
-  (let ([with (if (dict-has-key? Γ with) (dict-ref Γ with) with)])
+  (let ([with (expand with Γ)])
   (match* (expr with)
     [('sole 'Unit) #t]
     [(s 'Str) #:when (string? s) #t]
@@ -83,7 +85,7 @@
     [(e `(+ ,t1 ,t2))
       (or (check- e t1 Γ) (check- e t2 Γ))]
     [(x _) #:when (dict-has-key? Γ x)
-      (equal? (dict-ref Γ x) with)]
+      (equiv? (dict-ref Γ x) with Γ Γ)]
 
     [(`(type ,t1 ,t2 ,in) with)
       (check- in with (dict-set Γ t1 t2))]
@@ -98,20 +100,20 @@
       (and (check- e1 t1 Γ) (check- e2 t2 Γ))]
     [(`(car ,e) with)
       (match (infer- e Γ)
-        [`(× ,t1 ,t2) (equal? t1 with)]
+        [`(× ,t1 ,t2) (equiv? t1 with Γ Γ)]
         [t #f])]
     [(`(cdr ,e) with)
       (match (infer- e Γ)
-        [`(× ,t1 ,t2) (equal? t2 with)]
+        [`(× ,t1 ,t2) (equiv? t2 with Γ Γ)]
         [t #f])]
 
     [(`(inl ,e) with)
       (match (infer- e Γ)
-        [`(+ ,t1 ,t2) (equal? t1 with)]
+        [`(+ ,t1 ,t2) (equiv? t1 with Γ Γ)]
         [t #f])]
     [(`(inr ,e) with)
       (match (infer- e Γ)
-        [`(+ ,t1 ,t2) (equal? t2 with)]
+        [`(+ ,t1 ,t2) (equiv? t2 with Γ Γ)]
         [t #f])]
     [(`(case ,e ,f1 ,f2) with)
       (match* ((infer- f1 Γ) (infer- f2 Γ))
@@ -120,24 +122,24 @@
             (check- f1 `(→ ,a1 ,with) Γ) (check- f2 `(→ ,a2 ,with) Γ))]
         [(t1 t2) #f])]
     [(`(,e (: ,t)) with)
-      (and (equal? t with) (check- e t Γ))]
+      (and (equiv? t with Γ Γ) (check- e t Γ))]
 
     [('nil `(List ,t)) #t]
     [(`(cons ,f1 ,f2) `(List ,t))
       (and (check- f1 t Γ) (check- f2 `(List ,t) Γ))]
     [(`(head ,e) with)
       (match (infer- e)
-        [`(List ,t) (equal? t with)]
+        [`(List ,t) (equiv? t with Γ Γ)]
         [t #f])]
     [(`(tail ,e) with)
-      (equal? (infer- e Γ) with)]
+      (equiv? (infer- e Γ) with Γ Γ)]
 
     [(`(λ ,x (: ,t) ,e) `(→ ,t1 ,t2))
-      (and (equal? t t1) (check- e t2 (dict-set Γ x t1)))]
+      (and (equiv? t t1 Γ Γ) (check- e t2 (dict-set Γ x t1)))]
     [(`(,e1 ,e2) t)
       (match (infer- e1 Γ)
         [`(→ ,t1 ,t2)
-          (and (equal? t2 t) (equal? t1 (infer- e2 Γ)))]
+          (and (equiv? t2 t Γ Γ) (equiv? t1 (infer- e2 Γ) Γ Γ))]
         [t #f])]
 
     [(e t) #f])))
@@ -190,7 +192,7 @@
     [`(case ,e ,f1 ,f2)
       (match* ((infer- f1 Γ) (infer- f2 Γ))
         [(`(→ ,a1 ,t1) `(→ ,a2 ,t2))
-          (if (and (check- e `(+ ,a1 ,a2)) (equal? t1 t2)) t1
+          (if (and (check- e `(+ ,a1 ,a2)) (equiv? t1 t2 Γ Γ)) t1
             (err (format "case ~a is not of consistent type!" `(case ,e ,f1 ,f2))))]
         [(t1 t2) (err (format "case ~a is malformed!" `(case ,e ,f1 ,f2)))])]
     [`(,e (: ,t))
@@ -221,3 +223,26 @@
         [t (err (format "expected → type on application body, got ~a" t))])]
 
     [e (err (format "inferring an unknown expression ~a" e))]))
+
+(define (expand t Γ)
+  (if (dict-has-key? Γ t) (dict-ref Γ t) t))
+
+;; checks if two expressions are equivalent up to α-renaming and ascryption
+(define (equiv? e1 e2 [Γ1 #hash()] [Γ2 #hash()])
+  (match* (e1 e2)
+    [(x1 x2) #:when (dict-has-key? Γ1 x1)
+      (equiv? (dict-ref Γ1 x1) x2 Γ1 Γ2)]
+    [(x1 x2) #:when (dict-has-key? Γ2 x2)
+      (equiv? x1 (dict-ref Γ2 x2) Γ1 Γ2)]
+    [(`(λ ,x1 (: _) ,e1) `(λ ,x2 (: _) ,e2)) ; todo: merge these into one
+      (let ([name gensym])
+      (equiv? e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name)))]
+    [(`(λ ,x1 ,e1) `(λ ,x2 ,e2))
+      (let ([name gensym])
+      (equiv? e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name)))]
+    [(`(,l1 ...) `(,l2 ...))
+      (foldl (λ (x1 x2 acc) (if (equiv? x1 x2 Γ1 Γ2) acc #f)) #t l1 l2)]
+    [(v1 v2) (equal? v1 v2)]))
+(check-true (equiv? '(λ a a) '(λ b b)))
+(check-true (equiv? '(λ a (λ b a)) '(λ b (λ a b))))
+(check-true (equiv? '(λ a (λ b (λ c (a (b c))))) '(λ c (λ a (λ b (c (a b)))))))
