@@ -88,6 +88,12 @@
     [(`(type ,t1 ,t2 ,in) with)
       (check- in with (dict-set Γ t1 t2))]
 
+    [(`(inc ,e) 'Nat)
+      (check- e 'Nat Γ)]
+    [(`(if ,c ,e1 ,e2) with)
+      (and (check- c 'Bool Γ)
+        (check- e1 with Γ) (check e2 with Γ))]
+
     [(`(pair ,e1 ,e2) `(× ,t1 ,t2))
       (and (check- e1 t1 Γ) (check- e2 t2 Γ))]
     [(`(car ,e) with)
@@ -150,6 +156,17 @@
 
     [`(type ,t1 ,t2 ,in)
       (infer in (dict-set Γ t1 t2))]
+
+    [`(inc ,e)
+      (if (check- e 'Nat Γ) 'Nat
+        (err (format "calling inc on incorrect type ~a" (infer- e Γ))))]
+    [`(if ,c ,e1 ,e2)
+      (if (check- c 'Bool Γ)
+        (let ([t (infer- e1 Γ)])
+        (if (check- e2 t Γ) t
+          (err (format "condition has branches of differing types ~a and ~a"
+            t (infer- e2 Γ)))))
+        (err (format "condition ~a has incorrect type ~a" c (infer- c Γ))))]
 
     [`(pair ,e1 ,e2)
       `(× ,(infer- e1 Γ) ,(infer- e2 Γ))]
