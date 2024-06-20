@@ -14,6 +14,7 @@ For an introduction, see [*Explaining Lisp's quoting without getting tangled*](q
 * [x] STLC-ref: References.
 * [x] STLC-pred: Higher-order *predicative* references. Terminating.
 * [x] STLC-imp: Higher-order *impredicative* references. Terminating.
+* [x] STLC-dll: Doubly-linked lists via sums, products, ascryption, recursive types, and impredicative references. Terminating?
 * [ ] STLC-rc: References with reference counting.
 * [ ] STLC-gc: References with a tracing garbage collector.
 * [ ] STLC-own: References with first-class ownership, Rust-style.
