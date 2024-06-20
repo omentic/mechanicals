@@ -9,7 +9,7 @@
 ;;      (interpret Expr Table[Sym, Expr]): Value
 (define (interpret expr [Γ #hash()])
   (interpret- (strip (desugar expr)) Γ))
-(define (interpret- expr Γ Σ)
+(define (interpret- expr Γ)
   (match expr
     ['sole 'sole]
     [s #:when (string? s) s]
@@ -18,13 +18,13 @@
     [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
     [`(inc ,e)
-      (match (interpret- e Γ Σ)
+      (match (interpret- e Γ)
         [n #:when (natural? n) (+ n 1)]
         [e (format "incrementing an unknown value ~a" e)])]
     [`(if ,c ,e1 ,e2)
-      (match (interpret- c Γ Σ)
-        ['#t (interpret- e1 Γ Σ)]
-        ['#f (interpret- e2 Γ Σ)]
+      (match (interpret- c Γ)
+        ['#t (interpret- e1 Γ)]
+        ['#f (interpret- e2 Γ)]
         [e (err (format "calling if on unknown expression ~a" e))])]
 
     [`(pair ,e1 ,e2)
@@ -246,3 +246,8 @@
 (check-true (equiv? '(λ a a) '(λ b b)))
 (check-true (equiv? '(λ a (λ b a)) '(λ b (λ a b))))
 (check-true (equiv? '(λ a (λ b (λ c (a (b c))))) '(λ c (λ a (λ b (c (a b)))))))
+
+(check-eq? (interpret '(if #t 1 0)) 1)
+(check-eq? (interpret '(type Natural Nat ((λ x (: Natural) (inc x)) 1))) 2)
+(check-eq? (infer '(type Natural Nat ((λ x (: Natural) (inc x)) 1))) 'Nat)
+(check-true (check '(type Natural Nat ((λ x (: Natural) (inc x)) 1)) 'Nat))
