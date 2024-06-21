@@ -46,31 +46,28 @@
 ;; removes typing annotations
 (define (strip expr)
   (match expr
-    [`(λ ,x (: ,t) ,e (: ,t)) `(λ ,(strip x) ,(strip e))]
-    [`(λ ,x ,e (: ,t)) `(λ ,(strip x) ,(strip e))]
-    [`(λ ,x (: ,t) ,e) `(λ ,(strip x) ,(strip e))]
-    [`(type ,t1 ,t2 ,in) (strip in)]
-    [`(,e (: ,t)) (strip e)]
+    [`(,x : ,t) x]
+    [`(type ,t1 ,t2 ,in) (strip in)] ; todo: do better
     [`(,e1 ,e2 ,e3 ,e4) `(,(strip e1) ,(strip e2) ,(strip e3) ,(strip e4))]
     [`(,e1 ,e2 ,e3) `(,(strip e1) ,(strip e2) ,(strip e3))]
     [`(,e1 ,e2) `(,(strip e1) ,(strip e2))]
     [e e]))
 
-;;      (fmt Expr) → String
+;;      (fmt Expr): String
 (define (fmt expr)
   (match expr
     ['sole "⟨⟩"]
     [`(λ ,x ,e) (format "λ~a.[~a]" x (fmt e))]
     [`((λ ,x ,e1) ,e2) (format "~a = ~a; ~a" x (fmt e2) (fmt e1))]
-    [`(λ ,x (: ,t) ,e) (format "~a: ~a; ~a" x (fmt t) (fmt e))]
-    [`((λ ,x (: ,t) ,e1) ,e2) (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e2) (fmt e1))]
+    [`(λ (,x : ,t) ,e) (format "~a: ~a; ~a" x (fmt t) (fmt e))]
+    [`((λ (,x : ,t) ,e1) ,e2) (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e2) (fmt e1))]
     [`(λ ,x ,e ,env) (format "λ~a.[~a]" x (fmt e))]
     [`(μ ,x ,t) (format "μ~a.~a" x (fmt t))]
+    [`(let (,x : ,t) ,e ,in) (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e) (fmt in))]
     [`(let ,x ,e ,in) (format "~a = ~a; ~a" x (fmt e) (fmt in))]
-    [`(let ,x (: ,t) ,e ,in) (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e) (fmt in))]
     [`(set ,x ,e ,in) (format "~a := ~a; ~a" x (fmt e) (fmt in))]
-    [`(→ ,a ,b) (format "(~a → ~a)" (fmt a) (fmt b))]
-    [`(→ ,k ,a ,b) (format "(~a →~a ~a)" (fmt a) k (fmt b))]
+    [`(,a → ,b) (format "(~a → ~a)" (fmt a) (fmt b))]
+    [`(,a → ,k ,b) (format "(~a →~a ~a)" (fmt a) k (fmt b))]
     [`(Ref ,a) (format "Ref ~a" (fmt a))]
     [`(new ,a) (format "new ~a" (fmt a))]
     [`(! ,a) (format "!~a" (fmt a))]
@@ -87,21 +84,21 @@
     [`(deref ,e) (desugar `(! ,e))]
 
     [`(set ,e1 ,e2 ,in)
-      (desugar `(let _ (: Unit) (set ,e1 ,e2) ,in))]
-    [`(let ,id (: ,t) ,e)
-      (desugar `(let ,id (: ,t) ,e sole))]
+      (desugar `(let (_ : Unit) (set ,e1 ,e2) ,in))]
 
-    [`(let ,id (: (→ ,k ,a ,b)) (λ ,x ,e) ,in)
-      (desugar `((λ ,id (: (→ ,k ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
-    [`(let ,id (: (→ ,a ,b)) (λ ,x ,e) ,in)
-      (desugar `((λ ,id (: (→ ,a ,b)) ,in) (λ ,x (: ,a) ,e)))]
-    [`(let ,id (: ,t) ,e ,in)
-      (desugar `((λ ,id (: ,t) ,in) ,e))]
+    [`(let (,id : (,a → ,k ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ (,id : (,a → ,k ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let (,id : (,a → ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let ,x ,e ,in)
+      (desugar `((λ ,x ,in) ,e))]
+    [`(let ,x ,e)
+      (desugar `(let ,x ,e sole))]
 
-    [`(letrec ,x (: ,t) ,e ,in)
-      (desugar `(let ,x (: ,t) (fix (λ ,x (: ,t) ,e)) ,in))]
+    [`(letrec (,x : ,t) ,e ,in)
+      (desugar `(let (,x : ,t) (fix (λ (,x : ,t) ,e)) ,in))]
 
-    [`(λ ,x (: ,t) ,e) `(λ ,x (: ,t) ,(desugar e))]
+    [`(λ (,x : ,t) ,e) `(λ (,x : ,t) ,(desugar e))]
     [`(,e1 ,e2 ,e3 ,e4) `(,(desugar e1) ,(desugar e2) ,(desugar e3) ,(desugar e4))]
     [`(,e1 ,e2 ,e3) `(,(desugar e1) ,(desugar e2) ,(desugar e3))]
     [`(,e1 ,e2) `(,(desugar e1) ,(desugar e2))]
@@ -138,9 +135,9 @@
 (define (α-convert expr [used #hash()])
   (match expr
     [x #:when (dict-has-key? used x) (dict-ref used x)]
-    [`(λ ,x (: ,t) ,e)
+    [`(λ (,x : ,t) ,e)
       (let ([new (fresh (dict-values used))])
-      `(λ ,new (: ,(α-convert t used)) ,(α-convert e (dict-set used x new))))]
+      `(λ (,new : ,(α-convert t used)) ,(α-convert e (dict-set used x new))))]
     [`(λ ,x ,e)
       (let ([new (fresh (dict-values used))])
       `(λ ,new ,(α-convert e (dict-set used x new))))]

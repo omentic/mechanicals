@@ -21,22 +21,22 @@
   (match* (expr with)
     [(x _) #:when (dict-has-key? Γ x)
       (equal? (dict-ref Γ x) with)]
-    [(`(λ ,x (: ,t) ,e) `(→ ,t1 ,t2))
+    [(`(λ (,x : ,t) ,e) `(,t1 → ,t2))
       (and (equal? t t1) (check e t2 (dict-set Γ x t1)))]
     [(`(,e1 ,e2) t)
       (match (infer e1 Γ)
-        [`(→ ,t1 ,t2) (and (equal? t2 t) (equal? t1 (infer e2 Γ)))]
+        [`(,t1 → ,t2) (and (equal? t2 t) (equal? t1 (infer e2 Γ)))]
         [t #f])]
     [(e t) #f]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr [Γ #hash()])
   (match expr
-    [`(λ ,x (: ,t) ,e)
-      `(→ ,t ,(infer e (dict-set Γ x t)))]
+    [`(λ (,x : ,t) ,e)
+      `(,t → ,(infer e (dict-set Γ x t)))]
     [`(,e1 ,e2)
       (match (infer e1 Γ)
-        [`(→ ,t1 ,t2)
+        [`(,t1 → ,t2)
           (if (check e2 t1 Γ) t2
             (err (format "inferred argument type ~a does not match arg ~a" t1 e2)))]
         [t (err (format "expected → type on application body, got ~a" t))])]

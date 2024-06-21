@@ -41,13 +41,13 @@
       (equal? (dict-ref Γ x) with)]
 
     [(`(fix ,e) with)
-      (check- (infer- e) `(→ ,with ,with) Γ)]
+      (check- (infer- e) `(,with → ,with) Γ)]
 
-    [(`(λ ,x (: ,t) ,e) `(→ ,t1 ,t2))
+    [(`(λ (,x : ,t) ,e) `(,t1 → ,t2))
       (and (equal? t t1) (check- e t2 (dict-set Γ x t1)))]
     [(`(,e1 ,e2) t)
       (match (infer- e1 Γ)
-        [`(→ ,t1 ,t2)
+        [`(,t1 → ,t2)
           (and (equal? t2 t) (equal? t1 (infer- e2 Γ)))]
         [t #f])]
 
@@ -65,14 +65,14 @@
 
     [`(fix ,e)
       (match (infer- e Γ)
-        [`(→ ,t ,t) t]
+        [`(,t → ,t) t]
         [t (err (format "fix expects a term of type t → t, got ~a" t))])]
 
-    [`(λ ,x (: ,t) ,e)
-      `(→ ,t ,(infer- e (dict-set Γ x t)))]
+    [`(λ (,x : ,t) ,e)
+      `(,t → ,(infer- e (dict-set Γ x t)))]
     [`(,e1 ,e2)
       (match (infer- e1 Γ)
-        [`(→ ,t1 ,t2)
+        [`(,t1 → ,t2)
           (if (check- e2 t1 Γ) t2
             (err (format "inferred argument type ~a does not match arg ~a" t1 e2)))]
         [t (err (format "expected → type on application body, got ~a" t))])]

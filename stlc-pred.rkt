@@ -42,14 +42,14 @@
         [`(Ref ,t) (check- e2 t Γ)]
         [t #f])]
 
-    [(`(λ ,x (: ,t) ,e) `(→ ,k ,t1 ,t2))
+    [(`(λ (,x : ,t) ,e) `(,t1 → ,k ,t2))
       (and
         (equal? t t1)
         (>= k (max-level e (dict-set Γ x t1) t1 t2))  ; (KNOB)
         (check- e t2 (dict-set Γ x t1)))]
     [(`(,e1 ,e2) t)
       (match (infer- e1 Γ)
-        [`(→ ,k ,t1 ,t2)
+        [`(,t1 → ,k ,t2)
           (and (equal? t2 t) (equal? t1 (infer- e2 Γ)))]
         [t #f])]
 
@@ -69,24 +69,24 @@
     [`(new ,e) `(Ref ,(infer- e Γ))]
     [`(! ,e)
       (match (infer- e Γ)
-        [`(Ref ,t) t]                   ; Γ ⊢ e: Ref t → Γ ⊢ !e: t
+        [`(Ref ,t) t]
         [t (err "attempting to deref term not of Ref type!")])]
     [`(set ,e1 ,e2)
       (match (infer- e1 Γ)
-        [`(Ref ,t)                      ; Γ ⊢ e1: Ref t, Γ ⊢ e2: t
-          (if (check- e2 t Γ) 'Unit     ; ↝ Γ ⊢ e1 := e2: Unit
+        [`(Ref ,t)
+          (if (check- e2 t Γ) 'Unit
             (err (format "attempting to update ~a: ~a with term ~a: ~a of differing type"
               e1 t e2 (infer- e2 Γ))))]
         [t (err (format "attempting to update non-reference ~a: ~a" e1 t))])]
 
-    [`(λ ,x (: ,t1) ,e)
-      (let ([t2 (infer- e (dict-set Γ x t1))])            ; Γ, x: t1 ⊢ e: t2
-        (let ([k (max-level e (dict-set Γ x t1) t1 t2)])  ; k ≥ max-level(Γ, t1, t2) (KNOB)
-          `(→ ,k ,t1 ,t2)))]                             ; ↝ Γ ⊢ λx: t1.e: t1 →k t2
+    [`(λ (,x : ,t1) ,e)
+      (let ([t2 (infer- e (dict-set Γ x t1))])
+        (let ([k (max-level e (dict-set Γ x t1) t1 t2)])  ; (KNOB)
+          `(,t1 → ,k ,t2)))]
     [`(,e1 ,e2)
       (match (infer- e1 Γ)
-        [`(→ ,k ,t1 ,t2)                ; Γ ⊢ e1: t1 →k t2
-          (if (check- e2 t1 Γ) t2       ; Γ ⊢ e2: t1 ↝ Γ ⊢ (e1 e2): t2
+        [`(,t1 → ,k ,t2)
+          (if (check- e2 t1 Γ) t2
             (err (format "inferred argument type ~a does not match arg ~a of type ~a" t1 e2 (infer- e2 Γ))))]
         [t (err (format "expected → type on application body, got ~a" t))])]
 
@@ -104,7 +104,7 @@
   (match t
     ['Unit 0]
     ['Nat 0]
-    [`(→ ,k ,t1 ,t2)
+    [`(,t1 → ,k ,t2)
       (if (or (< k (level-type t1)) (< k (level-type t2)))
         (err (format "annotated level ~a is less than inferred levels of ~a and ~a!"
           k t1 t2))
@@ -124,7 +124,7 @@
     [`(! ,e) (level-body e Γ)]
     [`(set ,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
 
-    [`(λ ,x (: ,t) ,e) (level-body e (dict-set Γ x t))] ; todo: should be 0?
+    [`(λ (,x : ,t) ,e) (level-body e (dict-set Γ x t))] ; todo: should be 0?
     [`(,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
     [e (err (format "attempting to infer the level of unknown expression ~a" e))]))
 
@@ -132,16 +132,16 @@
 ; https://www.youtube.com/watch?v=XNgE8kBfSz8
 #;
 (interpret '
-  (let id (: (→ 0 Nat Nat)) (λ x x)
-    (let r (: (Ref (→ 0 Nat Nat))) (new id)
-      (let f (: (→ 1 Nat Nat)) (λ x ((! r) x))
+  (let (id : (Nat → 0 Nat)) (λ x x)
+    (let (r : (Ref (Nat → 0 Nat))) (new id)
+      (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
         (set r f
           (f 0))))))
 #;
 (print (fmt '
-  (let id (: (→ 0 Nat Nat)) (λ x x)
-    (let r (: (Ref (→ 0 Nat Nat))) (new id)
-      (let f (: (→ 1 Nat Nat)) (λ x ((! r) x))
+  (let (id : (Nat → 0 Nat)) (λ x x)
+    (let (r : (Ref (Nat → 0 Nat))) (new id)
+      (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
         (set r f
           (f 0)))))))
 
@@ -149,25 +149,25 @@
 (check-exn
   exn:fail?
   (λ () (infer '
-    (let id (: (→ 0 Nat Nat)) (λ x x)
-      (let r (: (Ref (→ 0 Nat Nat))) (new id)
-        (let f (: (→ 1 Nat Nat)) (λ x ((! r) x))
+    (let (id : (Nat → 0 Nat)) (λ x x)
+      (let (r : (Ref (Nat → 0 Nat))) (new id)
+        (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
           (set r f
             (f 0))))))))
 
 (check-eq?
   (infer '
-    (let id (: (→ 0 Nat Nat)) (λ x x)
-      (let r (: (Ref (→ 0 Nat Nat))) (new id)
-        (let f (: (→ 1 Nat Nat)) (λ x ((! r) x))
+    (let (id : (Nat → 0 Nat)) (λ x x)
+      (let (r : (Ref (Nat → 0 Nat))) (new id)
+        (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
           (f 0)))))
   'Nat)
 
 (check-eq?
   (check '
-    (let id (: (→ 0 Nat Nat)) (λ x x)
-      (let r (: (Ref (→ 0 Nat Nat))) (new id)
-        (let f (: (→ 1 Nat Nat)) (λ x ((! r) x))
+    (let (id : (Nat → 0 Nat)) (λ x x)
+      (let (r : (Ref (Nat → 0 Nat))) (new id)
+        (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
           (f 0))))
     'Nat)
   #t)
