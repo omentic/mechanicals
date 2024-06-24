@@ -46,11 +46,11 @@
 ;; removes typing annotations
 (define (strip expr)
   (match expr
-    [`(,x : ,t) x]
-    [`(type ,t1 ,t2 ,in) (strip in)] ; todo: do better
-    [`(,e1 ,e2 ,e3 ,e4) `(,(strip e1) ,(strip e2) ,(strip e3) ,(strip e4))]
-    [`(,e1 ,e2 ,e3) `(,(strip e1) ,(strip e2) ,(strip e3))]
-    [`(,e1 ,e2) `(,(strip e1) ,(strip e2))]
+    [`(,x : ,t) (strip x)]
+    [`(type ,t1 ,t2 ,in) (strip in)]
+    [`(fold ,t ,e) `(fold ,(strip e))]
+    [`(unfold ,t ,e) `(unfold ,(strip e))]
+    [`(,e ...) `(,@(map strip e))]
     [e e]))
 
 ;;      (fmt Expr): String
@@ -86,8 +86,12 @@
     [`(set ,e1 ,e2 ,in)
       (desugar `(let (_ : Unit) (set ,e1 ,e2) ,in))]
 
+    [`(let (,id : (,a → ,k ,b)) (λ (,x : ,a) ,e) ,in)
+      (desugar `((λ (,id : (,a → ,k ,b)) ,in) (λ (,x : ,a) ,e)))]
     [`(let (,id : (,a → ,k ,b)) (λ ,x ,e) ,in)
       (desugar `((λ (,id : (,a → ,k ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let (,id : (,a → ,b)) (λ (,x : ,a) ,e) ,in)
+      (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
     [`(let (,id : (,a → ,b)) (λ ,x ,e) ,in)
       (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
     [`(let ,x ,e ,in)
@@ -98,10 +102,7 @@
     [`(letrec (,x : ,t) ,e ,in)
       (desugar `(let (,x : ,t) (fix (λ (,x : ,t) ,e)) ,in))]
 
-    [`(λ (,x : ,t) ,e) `(λ (,x : ,t) ,(desugar e))]
-    [`(,e1 ,e2 ,e3 ,e4) `(,(desugar e1) ,(desugar e2) ,(desugar e3) ,(desugar e4))]
-    [`(,e1 ,e2 ,e3) `(,(desugar e1) ,(desugar e2) ,(desugar e3))]
-    [`(,e1 ,e2) `(,(desugar e1) ,(desugar e2))]
+    [`(,e ...) `(,@(map desugar e))]
     [e e]))
 
 (define (char-inc c) (integer->char (inc (char->integer c))))
@@ -144,9 +145,15 @@
     [`(μ ,x ,t)
       (let ([new (fresh (dict-values used))])
       `(μ ,new ,(α-convert t (dict-set used x new))))]
-    [`(,e ...) (map (λ (x) (α-convert x used)) e)]
+    [`(,e ...) `(,@(map (λ (x) (α-convert x used)) e))]
     [v v]))
 (check-equal? '(λ a (λ b (λ c (a (b c)))))
   (α-convert '(λ a (λ b (λ c (a (b c)))))))
 (check-equal? '(λ a (λ b (λ c (a (b c)))))
   (α-convert '(λ c (λ a (λ b (c (a b)))))))
+
+(define (replace expr key value)
+  (match expr
+    [x #:when (equal? x key) value]
+    [`(,e ...) `(,@(map (λ (x) (replace x key value)) e))]
+    [v v]))

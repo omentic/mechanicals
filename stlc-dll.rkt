@@ -1,6 +1,7 @@
 #lang racket
 (require "lib.rkt")
 (require (only-in "stlc-ext.rkt" equiv?))
+(require rackunit)
 
 ;; The Simply-Typed Lambda Calculus with higher-order *impredicative* references,
 ;; plus sums products booleans ascryption etc, to implement doubly-linked lists
@@ -28,22 +29,22 @@
         [e (err (format "calling if on unknown expression ~a" e))])]
 
     [`(pair ,e1 ,e2)
-      `(pair ,(interpret- e1 Γ) ,(interpret- e2 Γ))]
+      `(pair ,(interpret- e1 Γ Σ) ,(interpret- e2 Γ Σ))]
     [`(car ,e)
-      (match (interpret- e Γ)
+      (match (interpret- e Γ Σ)
         [`(pair ,e1 ,e2) e1]
         [e (err (format "calling car on unknown expression ~a" e))])]
     [`(cdr ,e)
-      (match (interpret- e Γ)
+      (match (interpret- e Γ Σ)
         [`(pair ,e1 ,e2) e2]
         [e (err (format "calling cdr on unknown expression ~a" e))])]
 
-    [`(inl ,e) `(inl ,(interpret- e Γ))]
-    [`(inr ,e) `(inr ,(interpret- e Γ))]
-    [`(case ,e ,f1 ,f2)
-      (match (interpret- e Γ)
-        [`(inl ,e) (interpret- `(,f1 ,e) Γ)]
-        [`(inr ,e) (interpret- `(,f2 ,e) Γ)]
+    [`(inl ,e) `(inl ,(interpret- e Γ Σ))]
+    [`(inr ,e) `(inr ,(interpret- e Γ Σ))]
+    [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
+      (match (interpret- e Γ Σ)
+        [`(inl ,e) (interpret- e1 (dict-set Γ x1 e) Σ)]
+        [`(inr ,e) (interpret- e2 (dict-set Γ x2 e) Σ)]
         [e (err (format "calling case on unknown expression ~a" e))])]
 
     [`(new ,e)
@@ -60,8 +61,11 @@
         (err (format "attempting to update unknown reference ~a" r))))
       'sole]
 
-    [`(fold ,t ,e) `(fold ,t ,(interpret- e))]
-    [`(unfold ,t ,e) `(unfold ,t ,(interpret- e))]
+    [`(fold ,e) `(fold ,(interpret- e Γ Σ))]
+    [`(unfold ,e)
+      (match (interpret- e Γ Σ)
+        [`(fold ,e) e]
+        [e `(unfold e)])]
 
     [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(λ ,x ,e ,env) `(λ ,x ,e ,env)] ; ???
@@ -84,7 +88,7 @@
     [(n 'Nat) #:when (natural? n) #t]
     [(b 'Bool) #:when (boolean? b) #t]
     [(e `(,t1 ⊕ ,t2))
-      (or (check- e t1 Γ) (check- e t2 Γ))]
+      (or (equiv? (infer- e Γ) with) (check- e t1 Γ) (check- e t2 Γ))]
     [(x _) #:when (dict-has-key? Γ x)
       (equiv? (dict-ref Γ x) with Γ Γ)]
 
@@ -116,12 +120,8 @@
       (match (infer- e Γ)
         [`(,t1 ⊕ ,t2) (equiv? t2 with Γ Γ)]
         [t #f])]
-    [(`(case ,e ,f1 ,f2) with)
-      (match* ((infer- f1 Γ) (infer- f2 Γ))
-        [(`(,a1 → ,t1) `(,a2 → ,t2))
-          (and (check- e `(,a1 ⊕ ,a2))
-            (check- f1 `(,a1 → ,with) Γ) (check- f2 `(,a2 → ,with) Γ))]
-        [(t1 t2) #f])]
+    [(`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) with)
+      (equiv? with (infer- `(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) Γ) Γ Γ)]
     [(`(,e : ,t) with)
       (and (equiv? t with Γ Γ) (check- e t Γ))]
 
@@ -151,7 +151,6 @@
         [t #f])]
 
     [(e t) #f])))
-    ;)
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr [Γ #hash()])
@@ -190,20 +189,21 @@
         [`(,t1 × ,t2) t2]
         [t (err (format "calling cdr on incorrect type ~a" t))])]
 
-    [`(inl ,e)
+    [`(inl ,e) ; annotations necessary
       (match (infer- e Γ)
-        [`(,t1 ⊕ ,t2) t1]
+        [`(,t1 ⊕ ,t2) `(,t1 ⊕ ,t2)]
         [t (err (format "calling inl on incorrect type ~a" t))])]
-    [`(inr ,e)
+    [`(inr ,e) ; annotations necessary
       (match (infer- e Γ)
-        [`(,t1 ⊕ ,t2) t2]
+        [`(,t1 ⊕ ,t2) `(,t1 ⊕ ,t2)]
         [t (err (format "calling inr on incorrect type ~a" t))])]
-    [`(case ,e ,f1 ,f2)
-      (match* ((infer- f1 Γ) (infer- f2 Γ))
-        [(`(,a1 → ,t1) `(,a2 → ,t2))
-          (if (and (check- e `(,a1 ⊕ ,a2)) (equiv? t1 t2 Γ Γ)) t1
-            (err (format "case ~a is not of consistent type!" `(case ,e ,f1 ,f2))))]
-        [(t1 t2) (err (format "case ~a is malformed!" `(case ,e ,f1 ,f2)))])]
+    [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
+      (match (infer- e Γ)
+        [`(,a1 ⊕ ,a2)
+          (let ([b1 (infer- e1 (dict-set Γ x1 (expand a1 Γ)))] [b2 (infer- e2 (dict-set Γ x2 (expand a2 Γ)))])
+            (if (equiv? b1 b2 Γ Γ) b1
+              (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) b1 b2)))))]
+        [t (err (format "calling case on incorrect type ~a" t))])]
     [`(,e : ,t)
       (if (check- e t Γ) t
         (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
@@ -223,12 +223,12 @@
 
     [`(fold (μ ,x ,t) ,e)
       (if (check- e t (dict-set Γ x `(μ ,x ,t))) `(μ ,x ,t)
-        (err (format ("expected ~a to be of type ~a, got ~a"
-          e t (infer e (dict-set Γ x `(μ ,x ,t)))))))]
+        (err (format "expected ~a to be of type ~a, got ~a"
+          e t (infer e (dict-set Γ x `(μ ,x ,t))))))]
     [`(unfold (μ ,x ,t) ,e)
-      (if (check- e `(μ ,x ,t)) (α-convert t #hash((x . `(μ ,x ,t))))
-        (err (format ("expected ~a to be of type ~a, got ~a"
-          e `(μ ,x ,t) (infer- e Γ)))))]
+      (if (check- e `(μ ,x ,t)) (replace t x `(μ ,x ,t))
+        (err (format "expected ~a to be of type ~a, got ~a"
+          e `(μ ,x ,t) (infer- e Γ))))]
 
     [`(λ (,x : ,t1) ,e)
       (let ([t2 (infer- e (dict-set Γ x t1))])
@@ -239,6 +239,7 @@
         [`(,t1 → ,k ,t2)
           (if (check- e2 t1 Γ) t2
             (err (format "inferred argument type ~a does not match arg ~a of type ~a" t1 e2 (infer- e2 Γ))))]
+        [`(,t1 → ,t2) (err (format "missing level annotation on function type"))]
         [t (err (format "expected → type on application body, got ~a" t))])]
 
     [e (err (format "attempting to infer an unknown expression ~a" e))]))
@@ -259,6 +260,9 @@
   (match (expand t Γ)
     ['Unit 0]
     ['Nat 0]
+    [`(,t1 × ,t2) (max (level-type t1 Γ) (level-type t2 Γ))]
+    [`(,t1 ⊕ ,t2) (max (level-type t1 Γ) (level-type t2 Γ))]
+    [`(μ ,x ,t) (level-type t (dict-set Γ x 'Unit))] ; VERY WEIRD
     [`(,t1 → ,k ,t2)
       (if (or (< k (level-type t1 Γ)) (< k (level-type t2 Γ)))
         (err (format "annotated level ~a is less than inferred levels of ~a and ~a!"
@@ -270,14 +274,14 @@
     [t (err (format "attempting to infer the level of unknown type ~a" t))]))
 
 ;;      (level-body Expr Table[Sym, Type]): Natural
-(define (level-body e Γ)
+(define (level-body e Γ) ; FIXME: this part is mostly wrong
   (match e
+    [`(,e : ,t) (level-type t Γ)] ; hrm
     ['sole 0]
     [n #:when (natural? n) 0]
     [x #:when (dict-has-key? Γ x)
       (level-type (dict-ref Γ x) Γ)]
     [`(inc ,e) (level-body e Γ)]
-    [`(new ,e) (level-body e Γ)]
     [`(new ,e) (level-body e Γ)]
 
     [`(pair ,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
@@ -285,9 +289,14 @@
     [`(cdr ,e) (level-body e Γ)]
     [`(inl ,e) (level-body e Γ)]
     [`(inr ,e) (level-body e Γ)]
-    [`(case ,e ,f1 ,f2) (max (level-body e Γ) (level-body f1 Γ) (level-body f2 Γ))]
+    [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
+      (max (level-body e Γ)
+           (level-body e1 (dict-set Γ x1 'Unit)) ; FIXME: totally incorrect
+           (level-body e2 (dict-set Γ x2 'Unit)))]
     [`(fold (μ ,x ,t) ,e) (level-body e Γ)]
     [`(unfold (μ ,x ,t) ,e) (level-body e Γ)]
+    [`(fold ,e) (level-body e Γ)]
+    [`(unfold ,e) (level-body e Γ)]
 
     [`(! ,e) (level-body e Γ)]
     [`(set ,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
@@ -295,7 +304,7 @@
     [`(λ (,x : ,t) ,e) (level-body e (dict-set Γ x t))] ; todo: should be 0?
     [`(,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]))
 
-(require rackunit)
+
 (check-exn
   exn:fail?
   (λ () (infer '

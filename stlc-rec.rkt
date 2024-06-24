@@ -1,5 +1,6 @@
 #lang racket
 (require "lib.rkt")
+(require (only-in "stlc-ext.rkt" equiv?))
 
 ;; The Simply-Typed Lambda Calculus with iso-recursive types
 
@@ -20,8 +21,10 @@
     [n #:when (natural? n) n]
     [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
-    [`(fold ,t ,e) `(fold ,t ,(interpret- e))]
-    [`(unfold ,t ,e) `(unfold ,t ,(interpret- e))]
+    [`(fold ,e) `(fold ,(interpret- e))]
+    [`(unfold ,e)
+      (match (interpret- e)
+        [`(fold ,e) e] [e e])]
 
     [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(,e1 ,e2)
