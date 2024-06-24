@@ -90,10 +90,10 @@
     [(e `(,t1 ⊕ ,t2))
       (or (equiv? (infer- e Γ) with) (check- e t1 Γ) (check- e t2 Γ))]
     [(x _) #:when (dict-has-key? Γ x)
-      (equiv? (dict-ref Γ x) with Γ Γ)]
+      (equiv? (expand (dict-ref Γ x) Γ) with Γ Γ)]
 
     [(`(type ,t1 ,t2 ,in) with)
-      (check- in with (dict-set Γ t1 t2))]
+      (check- in with (dict-set Γ t1 (expand t2 Γ)))]
 
     [(`(inc ,e) 'Nat)
       (check- e 'Nat Γ)]
@@ -138,11 +138,18 @@
       (and (check- e `(μ ,x ,t) Γ)
         (equiv? with t #hash() #hash((x . `(μ ,x ,t)))))]
 
+    [(`(fold ,e) `(μ ,x ,t))
+      (check- e t (dict-set Γ x `(μ ,x ,t)))]
+    [(`(unfold ,e) with) ; FIXME: GROSS
+      (match* ((infer- e Γ) with)
+        [(`(μ ,_ ,t) `(μ ,_ ,t)) #T]
+        [(t u) #f])]
+
     [(`(λ (,x : ,t) ,e) `(,t1 → ,k ,t2))
       (and
         (equiv? t t1 Γ Γ)
-        (> k (max-level e t1 t2 (dict-set Γ x t1)))  ; KNOB
-        (check- e t2 (dict-set Γ x t1)))]
+        (> k (max-level e t1 t2 (dict-set Γ x (expand t1 Γ))))  ; KNOB
+        (check- e t2 (dict-set Γ x (expand t1 Γ))))]
     [(`(,e1 ,e2) t)
       (match (infer- e1 Γ)
         [`(,t1 → ,k ,t2)
@@ -165,7 +172,7 @@
       (dict-ref Γ x)]
 
     [`(type ,t1 ,t2 ,in)
-      (infer in (dict-set Γ t1 t2))]
+      (infer in (dict-set Γ t1 (expand t2 Γ)))]
 
     [`(inc ,e)
       (if (check- e 'Nat Γ) 'Nat
@@ -230,9 +237,18 @@
         (err (format "expected ~a to be of type ~a, got ~a"
           e `(μ ,x ,t) (infer- e Γ))))]
 
+    [`(fold ,e)
+      (match (infer- e Γ)
+        [`(μ ,x ,t) `(μ ,x ,t)]
+        [t (err (format "expected ~a to be recursive, got ~a" e t))])]
+    [`(unfold ,e)
+      (match (infer- e Γ)
+        [`(μ ,x ,t) (replace t x `(μ ,x ,t))]
+        [t (err (format "expected ~a to be recursive, got ~a" e t))])]
+
     [`(λ (,x : ,t1) ,e)
-      (let ([t2 (infer- e (dict-set Γ x t1))])
-        (let ([k (+ 1 (max-level e t1 t2 (dict-set Γ x t1)))])  ; KNOB
+      (let ([t2 (infer- e (dict-set Γ x (expand t1 Γ)))])
+        (let ([k (+ 1 (max-level e t1 t2 (dict-set Γ x (expand t1 Γ))))])  ; KNOB
           `(,t1 → ,k ,t2)))]
     [`(,e1 ,e2)
       (match (infer- e1 Γ)
@@ -301,7 +317,7 @@
     [`(! ,e) (level-body e Γ)]
     [`(set ,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
     [`(if ,c ,e1 ,e2) (max (level-body c Γ) (level-body e1 Γ) (level-body e2 Γ))]
-    [`(λ (,x : ,t) ,e) (level-body e (dict-set Γ x t))] ; todo: should be 0?
+    [`(λ (,x : ,t) ,e) (level-body e (dict-set Γ x (expand t Γ)))] ; todo: should be 0?
     [`(,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]))
 
 
@@ -335,3 +351,128 @@
 (check-eq? (interpret '(type Natural Nat ((λ (x : Natural) (inc x)) 1))) 2)
 (check-eq? (infer '(type Natural Nat ((λ (x : Natural) (inc x)) 1))) 'Nat)
 (check-true (check '(type Natural Nat ((λ (x : Natural) (inc x)) 1)) 'Nat))
+
+(check-equal?
+  (infer
+    '(case (inr (sole : (Nat ⊕ Unit)))
+      (x ⇒ 0) (x ⇒ 1))) 'Nat)
+
+(check-true
+  (check
+    '(case (inr (sole : (Nat ⊕ Unit)))
+      (x ⇒ x)
+      (x ⇒ 1)) 'Nat))
+
+(check-equal?
+  (interpret
+    '((λ (p1 : DoublyLinkedList) (car (unfold p1)))
+      (fold
+        (pair 413
+        (pair (inl (sole : (Unit ⊕ DoublyLinkedList)))
+              (inl (sole : (Unit ⊕ DoublyLinkedList))))))))
+  413)
+
+(check-equal?
+  (interpret '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+   (let get
+    (λ x (car (unfold x)))
+   (let my_list
+    (fold
+      (pair 413
+      (pair (inl sole)
+            (inl sole))))
+   (get my_list)))))
+  413)
+
+
+(check-equal?
+  (interpret '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+   (let prev
+    (λ x
+      (case (car (cdr (unfold x)))
+        (x ⇒ (inl (! x)))
+        (x ⇒ (inr sole))))
+   (let my_list
+    (fold
+      (pair 413
+      (pair (inl (new sole))
+            (inl (new sole)))))
+   (prev my_list)))))
+  '(inl sole))
+
+
+(check-equal?
+  (interpret '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+   (let next
+    (λ x
+      (case (cdr (cdr (unfold x)))
+        (x ⇒ (inl (! x)))
+        (x ⇒ (inr sole))))
+   (let my_list
+    (fold
+      (pair 413
+      (pair (inr (new sole))
+            (inr (new sole)))))
+   (next my_list)))))
+  '(inr sole))
+
+(check-true
+  (check
+    '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+      sole)
+  '(DoublyLinkedList ⊕ Unit)))
+
+(check-equal?
+  (infer '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+    (λ (p3 : DoublyLinkedList) (case (cdr (cdr (unfold p3))) (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit)))) (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))))
+  '(DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
+
+(check-true
+  (check
+    '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+      (λ (p3 : DoublyLinkedList) (case (cdr (cdr (unfold p3))) (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit)))) (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit)))))))
+    '(DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit))))
+
+(check-equal?
+  (infer '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+    (let (get : (DoublyLinkedList → 1 Nat))
+      (λ (p1 : DoublyLinkedList) (car (unfold p1)))
+    (let (prev : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
+      (λ (p2 : DoublyLinkedList)
+        (case (car (cdr (unfold p2)))
+          (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit))))
+          (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))
+    (let (next : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
+      (λ (p3 : DoublyLinkedList)
+        (case (cdr (cdr (unfold p3)))
+          (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit))))
+          (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))
+    (let (my_list : DoublyLinkedList)
+      (fold
+        (pair 413
+        (pair (inr (sole : ((Ref DoublyLinkedList) ⊕ Unit)))
+              (inr (sole : ((Ref DoublyLinkedList) ⊕ Unit))))))
+    (prev my_list)))))))
+  '(DoublyLinkedList ⊕ Unit))
+
+(check-true
+  (check '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+    (let (get : (DoublyLinkedList → 1 Nat))
+      (λ (p1 : DoublyLinkedList) (car (unfold p1)))
+    (let (prev : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
+      (λ (p2 : DoublyLinkedList)
+        (case (car (cdr (unfold p2)))
+          (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit))))
+          (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))
+    (let (next : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
+      (λ (p3 : DoublyLinkedList)
+        (case (cdr (cdr (unfold p3)))
+          (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit))))
+          (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))
+    (let (my_list : DoublyLinkedList)
+      (fold
+        (pair 413
+        (pair (inr (sole : ((Ref DoublyLinkedList) ⊕ Unit)))
+              (inr (sole : ((Ref DoublyLinkedList) ⊕ Unit))))))
+    (prev my_list))))))
+    '(DoublyLinkedList ⊕ Unit)))
