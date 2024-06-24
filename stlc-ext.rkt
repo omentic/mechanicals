@@ -40,10 +40,10 @@
 
     [`(inl ,e) `(inl ,(interpret- e Γ))]
     [`(inr ,e) `(inr ,(interpret- e Γ))]
-    [`(case ,e ,f1 ,f2)
+    [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
       (match (interpret- e Γ)
-        [`(inl ,e) (interpret- `(,f1 ,e) Γ)]
-        [`(inr ,e) (interpret- `(,f2 ,e) Γ)]
+        [`(inl ,e) (interpret- e1 (dict-set Γ x1 e))]
+        [`(inr ,e) (interpret- e2 (dict-set Γ x2 e))]
         [e (err (format "calling case on unknown expression ~a" e))])]
 
     ['nil 'nil]
@@ -83,7 +83,7 @@
     [(n 'Nat) #:when (natural? n) #t]
     [(b 'Bool) #:when (boolean? b) #t]
     [(e `(,t1 ⊕ ,t2))
-      (or (check- e t1 Γ) (check- e t2 Γ))]
+      (or (equiv? (infer- e Γ) with) (check- e t1 Γ) (check- e t2 Γ))]
     [(x _) #:when (dict-has-key? Γ x)
       (equiv? (dict-ref Γ x) with Γ Γ)]
 
@@ -115,12 +115,8 @@
       (match (infer- e Γ)
         [`(,t1 ⊕ ,t2) (equiv? t2 with Γ Γ)]
         [t #f])]
-    [(`(case ,e ,f1 ,f2) with)
-      (match* ((infer- f1 Γ) (infer- f2 Γ))
-        [(`(,a1 → ,t1) `(,a2 → ,t2))
-          (and (check- e `(,a1 ⊕ ,a2))
-            (check- f1 `(,a1 → ,with) Γ) (check- f2 `(,a2 → ,with) Γ))]
-        [(t1 t2) #f])]
+    [(`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) with)
+      (equiv? with (infer- `(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) Γ) Γ Γ)]
     [(`(,e : ,t) with)
       (and (equiv? t with Γ Γ) (check- e t Γ))]
 
@@ -181,20 +177,21 @@
         [`(,t1 × ,t2) t2]
         [t (err (format "calling cdr on incorrect type ~a" t))])]
 
-    [`(inl ,e)
+    [`(inl ,e) ; annotations necessary
       (match (infer- e Γ)
-        [`(,t1 ⊕ ,t2) t1]
+        [`(,t1 ⊕ ,t2) `(,t1 ⊕ ,t2)]
         [t (err (format "calling inl on incorrect type ~a" t))])]
-    [`(inr ,e)
+    [`(inr ,e) ; annotations necessary
       (match (infer- e Γ)
-        [`(,t1 ⊕ ,t2) t2]
+        [`(,t1 ⊕ ,t2) `(,t1 ⊕ ,t2)]
         [t (err (format "calling inr on incorrect type ~a" t))])]
-    [`(case ,e ,f1 ,f2)
-      (match* ((infer- f1 Γ) (infer- f2 Γ))
-        [(`(,a1 → ,t1) `(,a2 → ,t2))
-          (if (and (check- e `(,a1 ⊕ ,a2)) (equiv? t1 t2 Γ Γ)) t1
-            (err (format "case ~a is not of consistent type!" `(case ,e ,f1 ,f2))))]
-        [(t1 t2) (err (format "case ~a is malformed!" `(case ,e ,f1 ,f2)))])]
+    [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
+      (match (infer- e Γ)
+        [`(,a1 ⊕ ,a2)
+          (let ([b1 (infer- e1 (dict-set Γ x1 (expand a1 Γ)))] [b2 (infer- e2 (dict-set Γ x2 (expand a2 Γ)))])
+            (if (equiv? b1 b2 Γ Γ) b1
+              (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) b1 b2)))))]
+        [t (err (format "calling case on incorrect type ~a" t))])]
     [`(,e : ,t)
       (if (check- e t Γ) t
         (err (format "annotated expression ~a is not of annotated type ~a" e t)))]

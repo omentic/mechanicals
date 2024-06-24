@@ -21,10 +21,11 @@
     [n #:when (natural? n) n]
     [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
-    [`(fold ,e) `(fold ,(interpret- e))]
+    [`(fold ,e) `(fold ,(interpret- e Γ))]
     [`(unfold ,e)
-      (match (interpret- e)
-        [`(fold ,e) e] [e e])]
+      (match (interpret- e Γ)
+        [`(fold ,e) e]
+        [e `(unfold e)])]
 
     [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(,e1 ,e2)
@@ -77,12 +78,12 @@
 
     [`(fold (μ ,x ,t) ,e)
       (if (check- e t (dict-set Γ x `(μ ,x ,t))) `(μ ,x ,t)
-        (err (format ("expected ~a to be of type ~a, got ~a"
-          e t (infer e (dict-set Γ x `(μ ,x ,t)))))))]
+        (err (format "expected ~a to be of type ~a, got ~a"
+          e t (infer e (dict-set Γ x `(μ ,x ,t))))))]
     [`(unfold (μ ,x ,t) ,e)
-      (if (check- e `(μ ,x ,t)) (α-convert t #hash((x . `(μ ,x ,t))))
-        (err (format ("expected ~a to be of type ~a, got ~a"
-          e `(μ ,x ,t) (infer- e Γ)))))]
+      (if (check- e `(μ ,x ,t)) (replace t x `(μ ,x ,t))
+        (err (format "expected ~a to be of type ~a, got ~a"
+          e `(μ ,x ,t) (infer- e Γ))))]
 
     [`(λ (,x : ,t) ,e)
       `(,t → ,(infer- e (dict-set Γ x t)))]
