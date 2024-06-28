@@ -65,10 +65,9 @@
     [`(unfold ,e)
       (match (interpret- e Γ Σ)
         [`(fold ,e) e]
-        [e `(unfold e)])]
+        [e (err (format "attempting to unfold unknown expression ~a" e))])]
 
     [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
-    [`(λ ,x ,e ,env) `(λ ,x ,e ,env)] ; ???
     [`(,e1 ,e2)
       (match (interpret- e1 Γ Σ)
         [`(λ ,x ,e1 ,env)
@@ -87,8 +86,6 @@
     [('sole 'Unit) #t]
     [(n 'Nat) #:when (natural? n) #t]
     [(b 'Bool) #:when (boolean? b) #t]
-    [(e `(,t1 ⊕ ,t2))
-      (or (equiv? (infer- e Γ) with) (check- e t1 Γ) (check- e t2 Γ))]
     [(x _) #:when (dict-has-key? Γ x)
       (equiv? (expand (dict-ref Γ x) Γ) with Γ Γ)]
 
@@ -113,12 +110,12 @@
         [t #f])]
 
     [(`(inl ,e) with)
-      (match (infer- e Γ)
-        [`(,t1 ⊕ ,t2) (equiv? t1 with Γ Γ)]
+      (match with
+        [`(,t1 ⊕ ,t2) (equiv? t1 (infer- e Γ) Γ Γ)]
         [t #f])]
     [(`(inr ,e) with)
-      (match (infer- e Γ)
-        [`(,t1 ⊕ ,t2) (equiv? t2 with Γ Γ)]
+      (match with
+        [`(,t1 ⊕ ,t2) (equiv? t2 (infer- e Γ) Γ Γ)]
         [t #f])]
     [(`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) with)
       (equiv? with (infer- `(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) Γ) Γ Γ)]
@@ -196,26 +193,24 @@
         [`(,t1 × ,t2) t2]
         [t (err (format "calling cdr on incorrect type ~a" t))])]
 
-    [`(inl ,e) ; annotations necessary
-      (match (infer- e Γ)
-        [`(,t1 ⊕ ,t2) `(,t1 ⊕ ,t2)]
-        [t (err (format "calling inl on incorrect type ~a" t))])]
-    [`(inr ,e) ; annotations necessary
-      (match (infer- e Γ)
-        [`(,t1 ⊕ ,t2) `(,t1 ⊕ ,t2)]
-        [t (err (format "calling inr on incorrect type ~a" t))])]
+    [`(inl ,e)
+      (err (format "unable to infer the type of a raw inl"))]
+    [`(inr ,e)
+      (err (format "unable to infer the type of a raw inr"))]
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
       (match (infer- e Γ)
         [`(,a1 ⊕ ,a2)
-          (let ([b1 (infer- e1 (dict-set Γ x1 (expand a1 Γ)))] [b2 (infer- e2 (dict-set Γ x2 (expand a2 Γ)))])
+          (let ([b1 (infer- e1 (dict-set Γ x1 (expand a1 Γ)))]
+                [b2 (infer- e2 (dict-set Γ x2 (expand a2 Γ)))])
             (if (equiv? b1 b2 Γ Γ) b1
-              (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) b1 b2)))))]
+              (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) (,x1 ⇒ ,b1) (,x2 ⇒ ,b2))))))]
         [t (err (format "calling case on incorrect type ~a" t))])]
     [`(,e : ,t)
       (if (check- e t Γ) t
         (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
 
-    [`(new ,e) `(Ref ,(infer- e Γ))]
+    [`(new ,e)
+      `(Ref ,(infer- e Γ))]
     [`(! ,e)
       (match (infer- e Γ)
         [`(Ref ,t) t]
@@ -354,12 +349,12 @@
 
 (check-equal?
   (infer
-    '(case (inr (sole : (Nat ⊕ Unit)))
+    '(case ((inr sole) : (Nat ⊕ Unit))
       (x ⇒ 0) (x ⇒ 1))) 'Nat)
 
 (check-true
   (check
-    '(case (inr (sole : (Nat ⊕ Unit)))
+    '(case ((inr sole) : (Nat ⊕ Unit))
       (x ⇒ x)
       (x ⇒ 1)) 'Nat))
 
@@ -368,8 +363,8 @@
     '((λ (p1 : DoublyLinkedList) (car (unfold p1)))
       (fold
         (pair 413
-        (pair (inl (sole : (Unit ⊕ DoublyLinkedList)))
-              (inl (sole : (Unit ⊕ DoublyLinkedList))))))))
+        (pair ((inl sole) : (Unit ⊕ DoublyLinkedList))
+              ((inl sole) : (Unit ⊕ DoublyLinkedList)))))))
   413)
 
 (check-equal?
@@ -424,13 +419,19 @@
 
 (check-equal?
   (infer '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
-    (λ (p3 : DoublyLinkedList) (case (cdr (cdr (unfold p3))) (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit)))) (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))))
+    (λ (p3 : DoublyLinkedList)
+       (case (cdr (cdr (unfold p3)))
+        (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
+        (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))))
   '(DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
 
 (check-true
   (check
     '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
-      (λ (p3 : DoublyLinkedList) (case (cdr (cdr (unfold p3))) (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit)))) (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit)))))))
+      (λ (p3 : DoublyLinkedList)
+         (case (cdr (cdr (unfold p3)))
+          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
+          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit))))))
     '(DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit))))
 
 (check-equal?
@@ -440,18 +441,18 @@
     (let (prev : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
       (λ (p2 : DoublyLinkedList)
         (case (car (cdr (unfold p2)))
-          (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit))))
-          (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))
+          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
+          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))
     (let (next : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
       (λ (p3 : DoublyLinkedList)
         (case (cdr (cdr (unfold p3)))
-          (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit))))
-          (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))
+          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
+          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))
     (let (my_list : DoublyLinkedList)
       (fold
         (pair 413
-        (pair (inr (sole : ((Ref DoublyLinkedList) ⊕ Unit)))
-              (inr (sole : ((Ref DoublyLinkedList) ⊕ Unit))))))
+        (pair ((inr sole) : ((Ref DoublyLinkedList) ⊕ Unit))
+              ((inr sole) : ((Ref DoublyLinkedList) ⊕ Unit)))))
     (prev my_list)))))))
   '(DoublyLinkedList ⊕ Unit))
 
@@ -462,17 +463,17 @@
     (let (prev : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
       (λ (p2 : DoublyLinkedList)
         (case (car (cdr (unfold p2)))
-          (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit))))
-          (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))
+          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
+          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))
     (let (next : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
       (λ (p3 : DoublyLinkedList)
         (case (cdr (cdr (unfold p3)))
-          (x ⇒ (inl ((! x) : (DoublyLinkedList ⊕ Unit))))
-          (x ⇒ (inr (sole : (DoublyLinkedList ⊕ Unit))))))
+          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
+          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))
     (let (my_list : DoublyLinkedList)
       (fold
         (pair 413
-        (pair (inr (sole : ((Ref DoublyLinkedList) ⊕ Unit)))
-              (inr (sole : ((Ref DoublyLinkedList) ⊕ Unit))))))
+        (pair ((inr sole) : ((Ref DoublyLinkedList) ⊕ Unit))
+              ((inr sole) : ((Ref DoublyLinkedList) ⊕ Unit)))))
     (prev my_list))))))
     '(DoublyLinkedList ⊕ Unit)))
