@@ -154,8 +154,3 @@
 (check-equal? '(λ a (λ b (λ c (a (b c)))))
   (α-convert '(λ c (λ a (λ b (c (a b)))))))
 
-(define (replace expr key value)
-  (match expr
-    [x #:when (equal? x key) value]
-    [`(,e ...) `(,@(map (λ (x) (replace x key value)) e))]
-    [v v]))
