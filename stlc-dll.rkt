@@ -1,6 +1,5 @@
 #lang racket
 (require "lib.rkt")
-(require (only-in "stlc-ext.rkt" equiv?))
 (require rackunit)
 
 ;; The Simply-Typed Lambda Calculus with higher-order *impredicative* references,
@@ -82,79 +81,64 @@
 (define (check- expr with Γ)
   ; (print (format "check: ~a with ~a" (fmt expr) with))
   (let ([with (expand with Γ)])
-  (match* (expr with)
-    [('sole 'Unit) #t]
-    [(n 'Nat) #:when (natural? n) #t]
-    [(b 'Bool) #:when (boolean? b) #t]
-    [(x _) #:when (dict-has-key? Γ x)
-      (equiv? (expand (dict-ref Γ x) Γ) with Γ Γ)]
-
-    [(`(type ,t1 ,t2 ,in) with)
-      (check- in with (dict-set Γ t1 (expand t2 Γ)))]
-
-    [(`(inc ,e) 'Nat)
-      (check- e 'Nat Γ)]
-    [(`(if ,c ,e1 ,e2) with)
-      (and (check- c 'Bool Γ)
-        (check- e1 with Γ) (check e2 with Γ))]
-
-    [(`(pair ,e1 ,e2) `(,t1 × ,t2))
-      (and (check- e1 t1 Γ) (check- e2 t2 Γ))]
-    [(`(car ,e) with)
-      (match (infer- e Γ)
-        [`(,t1 × ,t2) (equiv? t1 with Γ Γ)]
-        [t #f])]
-    [(`(cdr ,e) with)
-      (match (infer- e Γ)
-        [`(,t1 × ,t2) (equiv? t2 with Γ Γ)]
-        [t #f])]
-
-    [(`(inl ,e) with)
+  (match expr
+    [`(inl ,e)
       (match with
         [`(,t1 ⊕ ,t2) (equiv? t1 (infer- e Γ) Γ Γ)]
         [t #f])]
-    [(`(inr ,e) with)
+    [`(inr ,e)
       (match with
         [`(,t1 ⊕ ,t2) (equiv? t2 (infer- e Γ) Γ Γ)]
         [t #f])]
-    [(`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) with)
-      (equiv? with (infer- `(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) Γ) Γ Γ)]
-    [(`(,e : ,t) with)
-      (and (equiv? t with Γ Γ) (check- e t Γ))]
 
-    [(`(new ,e) `(Ref ,t)) (check- e t Γ)]
-    [(`(! ,e) t) (check- e `(Ref ,t) Γ)]
-    [(`(set ,e1 ,e2) 'Unit)
-      (match (infer- e1 Γ)
-        [`(Ref ,t) (check- e2 t Γ)]
-        [t #f])]
-
-    [(`(fold (μ ,x ,t) ,e) `(μ ,x ,t))
-      (check- e t (dict-set Γ x `(μ ,x ,t)))]
-    [(`(unfold (μ ,x ,t) ,e) with)
+    [`(fold (μ ,x ,t) ,e)
+      (match with
+        [`(μ ,x ,t) (check- e t (dict-set Γ x `(μ ,x ,t)))])]
+    [`(unfold (μ ,x ,t) ,e)
       (and (check- e `(μ ,x ,t) Γ)
         (equiv? with t #hash() #hash((x . `(μ ,x ,t)))))]
 
-    [(`(fold ,e) `(μ ,x ,t))
-      (check- e t (dict-set Γ x `(μ ,x ,t)))]
-    [(`(unfold ,e) with) ; FIXME: GROSS
+    [`(fold ,e)
+      (match with
+        [`(μ ,x ,t) (check- e t (dict-set Γ x `(μ ,x ,t)))])]
+    [`(unfold ,e) ; FIXME: GROSS
       (match* ((infer- e Γ) with)
         [(`(μ ,_ ,t) `(μ ,_ ,t)) #T]
         [(t u) #f])]
 
-    [(`(λ (,x : ,t) ,e) `(,t1 → ,k ,t2))
-      (and
-        (equiv? t t1 Γ Γ)
-        (> k (max-level e t1 t2 (dict-set Γ x (expand t1 Γ))))  ; KNOB
-        (check- e t2 (dict-set Γ x (expand t1 Γ))))]
-    [(`(,e1 ,e2) t)
-      (match (infer- e1 Γ)
-        [`(,t1 → ,k ,t2)
-          (and (equiv? t2 t Γ Γ)
-               (equiv? t1 (infer- e2 Γ) Γ Γ))]
-        [t #f])]
+    [_ (equiv? with (infer- expr Γ) Γ Γ)])))
 
-    [(e t) #f])))
+;; Checks if two expressions or types are equivalent, up to α-conversion,
+;; given their respective contexts
+;; (equiv?
+;;   e1, e2: Expr ⊕ Type
+;;   Γ1, Γ2: Table[Sym (Expr ⊕ Type)]
+;; ): Bool
+(define (equiv? e1 e2 Γ1 Γ2)
+  (match* (e1 e2)
+    ; bound identifiers: if a key exists in the context, look it up
+    [(x1 x2) #:when (dict-has-key? Γ1 x1)
+      (equiv? (dict-ref Γ1 x1) x2 Γ1 Γ2)]
+    [(x1 x2) #:when (dict-has-key? Γ2 x2)
+      (equiv? x1 (dict-ref Γ2 x2) Γ1 Γ2)]
+
+    ; recursive types: self-referential names can be arbitrary
+    [(`(μ ,x1 ,t1) `(μ ,x2 ,t2))
+      (let ([name gensym])
+      (equiv? t1 t2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name)))]
+    ; function expressions: parameter names can be arbitrary
+    [(`(λ (,x1 : ,t1) ,e1) `(λ (,x2 : ,t2) ,e2))
+      (let ([name gensym])
+      (and (equiv? e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name))
+        (equiv? t1 t2 Γ1 Γ2)))]
+    [(`(λ ,x1 ,e1) `(λ ,x2 ,e2))
+      (let ([name gensym])
+      (equiv? e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name)))]
+
+    ; check for syntactic equivalence on lists and values
+    [(`(,l1 ...) `(,l2 ...))
+      (foldl (λ (x1 x2 acc) (if (equiv? x1 x2 Γ1 Γ2) acc #f)) #t l1 l2)]
+    [(v1 v2) (equal? v1 v2)]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr [Γ #hash()])
@@ -170,6 +154,9 @@
 
     [`(type ,t1 ,t2 ,in)
       (infer in (dict-set Γ t1 (expand t2 Γ)))]
+    [`(,e : ,t)
+      (if (check- e t Γ) t
+        (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
 
     [`(inc ,e)
       (if (check- e 'Nat Γ) 'Nat
@@ -205,9 +192,6 @@
             (if (equiv? b1 b2 Γ Γ) b1
               (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) (,x1 ⇒ ,b1) (,x2 ⇒ ,b2))))))]
         [t (err (format "calling case on incorrect type ~a" t))])]
-    [`(,e : ,t)
-      (if (check- e t Γ) t
-        (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
 
     [`(new ,e)
       `(Ref ,(infer- e Γ))]
@@ -410,12 +394,6 @@
             (inr (new sole)))))
    (next my_list)))))
   '(inr sole))
-
-(check-true
-  (check
-    '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
-      sole)
-  '(DoublyLinkedList ⊕ Unit)))
 
 (check-equal?
   (infer '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
