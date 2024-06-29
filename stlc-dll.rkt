@@ -263,7 +263,7 @@
     [`(! ,e)
       (match (infer-core e Γ)
         [`(Ref ,t) t]
-        [t (err "attempting to deref term not of Ref type!")])]
+        [t (err (format "attempting to deref term ~a of type ~a" e t))])]
     [`(set ,e1 ,e2)
       (match (infer-core e1 Γ)
         [`(Ref ,t)
@@ -434,12 +434,16 @@
 
 (check-equal?
   (interpret
-    '((λ (p1 : DoublyLinkedList) (car (unfold p1)))
+    '((λ p1 (car (unfold p1)))
       (fold
         (pair 413
-        (pair ((inl sole) : (Unit ⊕ DoublyLinkedList))
-              ((inl sole) : (Unit ⊕ DoublyLinkedList)))))))
+        (pair (inl sole)
+              (inl sole))))))
   413)
+
+
+;; initial implementation of doubly linked lists:
+;; (type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit)))))
 
 (check-equal?
   (interpret '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
@@ -452,7 +456,6 @@
             (inl sole))))
    (get my_list)))))
   413)
-
 
 (check-equal?
   (interpret '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
@@ -468,7 +471,6 @@
             (inl (new sole)))))
    (prev my_list)))))
   '(inl sole))
-
 
 (check-equal?
   (interpret '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
@@ -487,8 +489,8 @@
 
 (check-equal?
   (infer '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
-    (λ (p3 : DoublyLinkedList)
-       (case (cdr (cdr (unfold p3)))
+    (λ (self : DoublyLinkedList)
+       (case (cdr (cdr (unfold self)))
         (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
         (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))))
   '(DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
@@ -496,8 +498,8 @@
 (check-true
   (check
     '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
-      (λ (p3 : DoublyLinkedList)
-         (case (cdr (cdr (unfold p3)))
+      (λ (self : DoublyLinkedList)
+         (case (cdr (cdr (unfold self)))
           (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
           (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit))))))
     '(DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit))))
@@ -505,17 +507,17 @@
 (check-equal?
   (infer '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
     (let (get : (DoublyLinkedList → 1 Nat))
-      (λ (p1 : DoublyLinkedList) (car (unfold p1)))
+      (λ self (car (unfold self)))
     (let (prev : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
-      (λ (p2 : DoublyLinkedList)
-        (case (car (cdr (unfold p2)))
-          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
-          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))
+      (λ self
+        (case (car (cdr (unfold self)))
+          (x ⇒ (inl (! x)))
+          (x ⇒ (inr sole))))
     (let (next : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
-      (λ (p3 : DoublyLinkedList)
-        (case (cdr (cdr (unfold p3)))
-          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
-          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))
+      (λ self
+        (case (cdr (cdr (unfold self)))
+          (x ⇒ (inl (! x)))
+          (x ⇒ (inr sole))))
     (let (my_list : DoublyLinkedList)
       (fold
         (pair 413
@@ -527,17 +529,17 @@
 (check-true
   (check '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
     (let (get : (DoublyLinkedList → 1 Nat))
-      (λ (p1 : DoublyLinkedList) (car (unfold p1)))
+      (λ self (car (unfold self)))
     (let (prev : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
-      (λ (p2 : DoublyLinkedList)
-        (case (car (cdr (unfold p2)))
-          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
-          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))
+      (λ self
+        (case (car (cdr (unfold self)))
+          (x ⇒ (inl (! x)))
+          (x ⇒ (inr sole))))
     (let (next : (DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
-      (λ (p3 : DoublyLinkedList)
-        (case (cdr (cdr (unfold p3)))
-          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
-          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))
+      (λ self
+        (case (cdr (cdr (unfold self)))
+          (x ⇒ (inl (! x)))
+          (x ⇒ (inr sole))))
     (let (my_list : DoublyLinkedList)
       (fold
         (pair 413
@@ -545,3 +547,59 @@
               ((inr sole) : ((Ref DoublyLinkedList) ⊕ Unit)))))
     (prev my_list))))))
     '(DoublyLinkedList ⊕ Unit)))
+
+
+;; new implementation of doubly linked lists:
+;; (type DoublyLinkedList (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit)))
+
+(check-equal?
+  (interpret
+   '(let next
+    (λ self
+      (case (unfold self)
+        (some ⇒ (! (cdr (cdr some))))
+        (none ⇒ (fold (inr sole)))))
+   (let my_list
+    (fold
+      (inl
+        (pair 413
+        (pair (new (inr sole))
+              (new (inr sole))))))
+   (next my_list))))
+  '(inr sole))
+
+; issue: we only need annotations on the first case here because stlc-dll will try and return (μ Self (Nat × (Ref Self) × (Ref Self))) instead. this is perhaps bad, there should be some way to recover the original bindings... maybe??
+; todo: check should be able to place annotations on the right place idk
+; ok that is done. still original issue tho
+(check-equal?
+  (infer '(type DoublyLinkedList (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))
+    (λ (self : DoublyLinkedList)
+       (case (unfold self)
+        (some ⇒ ((! (cdr (cdr some))) : DoublyLinkedList))
+        (none ⇒ ((fold (inr sole)) : DoublyLinkedList))))))
+  '(DoublyLinkedList → 1 DoublyLinkedList))
+
+(check-true
+  (check '(type DoublyLinkedList (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))
+    (let (get : (DoublyLinkedList → 1 (Nat ⊕ Unit)))
+      (λ self
+        (case (unfold self)
+          (some ⇒ (inl (car some)))
+          (none ⇒ (inr sole))))
+    (let (prev : (DoublyLinkedList → 1 DoublyLinkedList))
+      (λ self
+        (case (unfold self)
+          (some ⇒ (! (car (cdr some))))
+          (none ⇒ ((fold (inr sole)) : DoublyLinkedList))))
+    (let (next : (DoublyLinkedList → 1 DoublyLinkedList))
+      (λ self
+        (case (unfold self)
+          (some ⇒ (! (cdr (cdr some))))
+          (none ⇒ ((fold (inr sole)) : DoublyLinkedList))))
+    (let (my_list : DoublyLinkedList)
+      (fold (inl
+        (pair 413
+        (pair (new ((fold (inr sole)) : DoublyLinkedList))
+              (new ((fold (inr sole)) : DoublyLinkedList))))))
+    (prev my_list))))))
+    'DoublyLinkedList))
