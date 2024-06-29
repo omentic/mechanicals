@@ -77,36 +77,36 @@
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
 (define (check expr with [Γ #hash()])
-  (check- (desugar expr) with Γ))
-(define (check- expr with Γ)
+  (check-core (desugar expr) with Γ))
+(define (check-core expr with Γ)
   ; (print (format "check: ~a with ~a" (fmt expr) with))
   (let ([with (expand with Γ)])
   (match expr
     [`(inl ,e)
       (match with
-        [`(,t1 ⊕ ,t2) (equiv? t1 (infer- e Γ) Γ Γ)]
+        [`(,t1 ⊕ ,t2) (equiv? t1 (infer-core e Γ) Γ Γ)]
         [t #f])]
     [`(inr ,e)
       (match with
-        [`(,t1 ⊕ ,t2) (equiv? t2 (infer- e Γ) Γ Γ)]
+        [`(,t1 ⊕ ,t2) (equiv? t2 (infer-core e Γ) Γ Γ)]
         [t #f])]
 
     [`(fold (μ ,x ,t) ,e)
       (match with
-        [`(μ ,x ,t) (check- e t (dict-set Γ x `(μ ,x ,t)))])]
+        [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))])]
     [`(unfold (μ ,x ,t) ,e)
-      (and (check- e `(μ ,x ,t) Γ)
+      (and (check-core e `(μ ,x ,t) Γ)
         (equiv? with t #hash() #hash((x . `(μ ,x ,t)))))]
 
     [`(fold ,e)
       (match with
-        [`(μ ,x ,t) (check- e t (dict-set Γ x `(μ ,x ,t)))])]
+        [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))])]
     [`(unfold ,e) ; FIXME: GROSS
-      (match* ((infer- e Γ) with)
+      (match* ((infer-core e Γ) with)
         [(`(μ ,_ ,t) `(μ ,_ ,t)) #T]
         [(t u) #f])]
 
-    [_ (equiv? with (infer- expr Γ) Γ Γ)])))
+    [_ (equiv? with (infer-core expr Γ) Γ Γ)])))
 
 ;; Checks if two expressions or types are equivalent, up to α-conversion,
 ;; given their respective contexts
@@ -142,8 +142,8 @@
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr [Γ #hash()])
-  (infer- (desugar expr) Γ))
-(define (infer- expr Γ)
+  (infer-core (desugar expr) Γ))
+(define (infer-core expr Γ)
   ; (print (format "infer: ~a" (fmt expr)))
   (match expr
     ['sole 'Unit]
@@ -153,30 +153,30 @@
       (dict-ref Γ x)]
 
     [`(type ,t1 ,t2 ,in)
-      (infer in (dict-set Γ t1 (expand t2 Γ)))]
+      (infer-core in (dict-set Γ t1 (expand t2 Γ)))]
     [`(,e : ,t)
-      (if (check- e t Γ) t
+      (if (check-core e t Γ) t
         (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
 
     [`(inc ,e)
-      (if (check- e 'Nat Γ) 'Nat
-        (err (format "calling inc on incorrect type ~a" (infer- e Γ))))]
+      (if (check-core e 'Nat Γ) 'Nat
+        (err (format "calling inc on incorrect type ~a" (infer-core e Γ))))]
     [`(if ,c ,e1 ,e2)
-      (if (check- c 'Bool Γ)
-        (let ([t (infer- e1 Γ)])
-        (if (check- e2 t Γ) t
+      (if (check-core c 'Bool Γ)
+        (let ([t (infer-core e1 Γ)])
+        (if (check-core e2 t Γ) t
           (err (format "condition has branches of differing types ~a and ~a"
-            t (infer- e2 Γ)))))
-        (err (format "condition ~a has incorrect type ~a" c (infer- c Γ))))]
+            t (infer-core e2 Γ)))))
+        (err (format "condition ~a has incorrect type ~a" c (infer-core c Γ))))]
 
     [`(pair ,e1 ,e2)
-      `(,(infer- e1 Γ) × ,(infer- e2 Γ))]
+      `(,(infer-core e1 Γ) × ,(infer-core e2 Γ))]
     [`(car ,e)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 × ,t2) t1]
         [t (err (format "calling car on incorrect type ~a" t))])]
     [`(cdr ,e)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 × ,t2) t2]
         [t (err (format "calling cdr on incorrect type ~a" t))])]
 
@@ -185,55 +185,55 @@
     [`(inr ,e)
       (err (format "unable to infer the type of a raw inr"))]
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,a1 ⊕ ,a2)
-          (let ([b1 (infer- e1 (dict-set Γ x1 (expand a1 Γ)))]
-                [b2 (infer- e2 (dict-set Γ x2 (expand a2 Γ)))])
+          (let ([b1 (infer-core e1 (dict-set Γ x1 (expand a1 Γ)))]
+                [b2 (infer-core e2 (dict-set Γ x2 (expand a2 Γ)))])
             (if (equiv? b1 b2 Γ Γ) b1
               (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) (,x1 ⇒ ,b1) (,x2 ⇒ ,b2))))))]
         [t (err (format "calling case on incorrect type ~a" t))])]
 
     [`(new ,e)
-      `(Ref ,(infer- e Γ))]
+      `(Ref ,(infer-core e Γ))]
     [`(! ,e)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(Ref ,t) t]
         [t (err "attempting to deref term not of Ref type!")])]
     [`(set ,e1 ,e2)
-      (match (infer- e1 Γ)
+      (match (infer-core e1 Γ)
         [`(Ref ,t)
-          (if (check- e2 t Γ) 'Unit
+          (if (check-core e2 t Γ) 'Unit
             (err (format "attempting to update ~a: ~a with term ~a: ~a of differing type"
-              e1 t e2 (infer- e2 Γ))))]
+              e1 t e2 (infer-core e2 Γ))))]
         [t (err (format "attempting to update non-reference ~a: ~a" e1 t))])]
 
     [`(fold (μ ,x ,t) ,e)
-      (if (check- e t (dict-set Γ x `(μ ,x ,t))) `(μ ,x ,t)
+      (if (check-core e t (dict-set Γ x `(μ ,x ,t))) `(μ ,x ,t)
         (err (format "expected ~a to be of type ~a, got ~a"
           e t (infer e (dict-set Γ x `(μ ,x ,t))))))]
     [`(unfold (μ ,x ,t) ,e)
-      (if (check- e `(μ ,x ,t)) (replace t x `(μ ,x ,t))
+      (if (check-core e `(μ ,x ,t)) (replace t x `(μ ,x ,t))
         (err (format "expected ~a to be of type ~a, got ~a"
-          e `(μ ,x ,t) (infer- e Γ))))]
+          e `(μ ,x ,t) (infer-core e Γ))))]
 
     [`(fold ,e)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(μ ,x ,t) `(μ ,x ,t)]
         [t (err (format "expected ~a to be recursive, got ~a" e t))])]
     [`(unfold ,e)
-      (match (infer- e Γ)
-        [`(μ ,x ,t) (replace t x `(μ ,x ,t))]
+      (match (infer-core e Γ)
+        [`(μ ,x ,t) (replace t x `(μ ,x ,t))] ; AAAA
         [t (err (format "expected ~a to be recursive, got ~a" e t))])]
 
     [`(λ (,x : ,t1) ,e)
-      (let ([t2 (infer- e (dict-set Γ x (expand t1 Γ)))])
+      (let ([t2 (infer-core e (dict-set Γ x (expand t1 Γ)))])
         (let ([k (+ 1 (max-level e t1 t2 (dict-set Γ x (expand t1 Γ))))])  ; KNOB
           `(,t1 → ,k ,t2)))]
     [`(,e1 ,e2)
-      (match (infer- e1 Γ)
+      (match (infer-core e1 Γ)
         [`(,t1 → ,k ,t2)
-          (if (check- e2 t1 Γ) t2
-            (err (format "inferred argument type ~a does not match arg ~a of type ~a" t1 e2 (infer- e2 Γ))))]
+          (if (check-core e2 t1 Γ) t2
+            (err (format "inferred argument type ~a does not match arg ~a of type ~a" t1 e2 (infer-core e2 Γ))))]
         [`(,t1 → ,t2) (err (format "missing level annotation on function type"))]
         [t (err (format "expected → type on application body, got ~a" t))])]
 

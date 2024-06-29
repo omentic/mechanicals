@@ -94,6 +94,8 @@
       (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
     [`(let (,id : (,a → ,b)) (λ ,x ,e) ,in)
       (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let ,x (,e : ,t) ,in)
+      (desugar `((λ (,x : ,t) ,in) ,e))]
     [`(let ,x ,e ,in)
       (desugar `((λ ,x ,in) ,e))]
     [`(let ,x ,e)
