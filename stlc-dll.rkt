@@ -81,7 +81,7 @@
     [e (err (format "attempting to interpret unknown expression ~a" e))]))
 
 ;; Checks that an expression is of a type, and returns #t or #f (or a bubbled-up error)
-;; with: a *normalized* type
+;; with: a type in weak-head normal form (!!)
 ;; Γ: a Table[Symbol, Expr ⊕ Type] representing the context:
 ;;   the current bindings in scope introduced by λx.[] and μx.[] and τx.[]
 ;;      (check Expr Type Table[Sym, Type]): Bool
@@ -101,62 +101,56 @@
         (check-core e1 with Γ) (check-core e2 with Γ))]
 
     [`(pair ,e1 ,e2)
-      (match (expand with Γ)
+      (match with
         [`(,t1 × ,t2) (and (check-core e1 t1 Γ) (check-core e2 t2 Γ))]
         [t #f])]
     [`(car ,e)
-      (match (expand (infer-core e Γ) Γ)
+      (match (infer-core e Γ)
         [`(,t1 × ,t2) (equiv? t1 with Γ Γ)]
         [t #f])]
     [`(cdr ,e)
-      (match (expand (infer-core e Γ) Γ)
+      (match (infer-core e Γ)
         [`(,t1 × ,t2) (equiv? t2 with Γ Γ)]
         [t #f])]
 
     [`(inl ,e)
-      (match (expand with Γ)
+      (match with
         [`(,t1 ⊕ ,t2) (check-core e t1 Γ)]
         [t #f])]
     [`(inr ,e)
-      (match (expand with Γ)
+      (match with
         [`(,t1 ⊕ ,t2) (check-core e t2 Γ)]
         [t #f])]
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
-      (match (expand (infer-core e Γ) Γ)
+      (match (infer-core e Γ)
         [`(,a1 ⊕ ,a2)
           (and (check-core e1 with (dict-set Γ x1 a1))
             (check-core e2 with (dict-set Γ x2 a2)))]
         [t #f])]
 
     [`(new ,e)
-      (match (expand with Γ)
+      (match with
         [`(Ref ,t) (check-core e t Γ)]
         [t #f])]
     [`(! ,e) (check-core e `(Ref ,with) Γ)]
     [`(set ,e1 ,e2)
-      (match (expand (infer-core e1 Γ) Γ)
+      (match (infer-core e1 Γ)
         [`(Ref ,t)
           (and (equiv? with 'Unit Γ Γ)
             (check-core e2 t Γ))]
         [t #f])]
 
-    [`(fold (μ ,x ,t) ,e)
-      (match (expand with Γ)
-        [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))])]
-    [`(unfold (μ ,x ,t) ,e)
-      (and (check-core e `(μ ,x ,t) Γ)
-        (equiv? with t Γ (dict-set Γ x `(μ ,x ,t))))]
+    ; [`(fold (μ ,x ,t) ,e)
+    ;   (match with
+    ;     [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))])]
 
     [`(fold ,e)
-      (match (expand with Γ)
-        [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))])]
-    [`(unfold ,e) ; FIXME: GROSS
-      (match* ((infer-core e Γ) with)
-        [(`(μ ,_ ,t) `(μ ,_ ,t)) #T]
-        [(t u) #f])]
+      (match with
+        [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))]
+        [t #f])]
 
     [`(λ (,x : ,t) ,e)
-      (match (expand with Γ)
+      (match with
         [`(,t1 → ,k ,t2)
           (and (equiv? t t1 Γ Γ) (check-core e t2 (dict-set Γ x t))
             (> k (max-level e t1 t2 (dict-set Γ x t1))))] ; KNOB
@@ -204,6 +198,7 @@
     [(v1 v2) (equal? v1 v2)]))
 
 ;; Infers a type from a given expression, if possible, or errors out.
+;; Should always return a type in weak-head normal form for structural matching.
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr)
   (infer-core (desugar expr) #hash()))
@@ -214,12 +209,12 @@
     [n #:when (natural? n) 'Nat]
     [b #:when (boolean? b) 'Bool]
     [x #:when (dict-has-key? Γ x)
-      (dict-ref Γ x)]
+      (expand (dict-ref Γ x) Γ)]
 
     [`(type ,t1 ,t2 ,in)
       (infer-core in (dict-set Γ t1 t2))]
-    [`(,e : ,t)
-      (if (check-core e t Γ) t
+    [`(,e : ,t) ; we have a manual type annotation, so we must expand to weak-head normal form
+      (if (check-core e (expand t Γ) Γ) (expand t Γ)
         (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
 
     [`(inc ,e)
@@ -273,7 +268,7 @@
         [t (err (format "attempting to update non-reference ~a: ~a" e1 t))])]
 
     [`(fold (μ ,x ,t) ,e)
-      (if (check-core e t (dict-set Γ x `(μ ,x ,t))) `(μ ,x ,t)
+      (if (check-core e (expand t Γ) (dict-set Γ x `(μ ,x ,t))) `(μ ,x ,t)
         (err (format "expected ~a to be of type ~a, got ~a"
           e t (infer e (dict-set Γ x `(μ ,x ,t))))))]
     [`(unfold (μ ,x ,t) ,e)
@@ -282,18 +277,19 @@
           e `(μ ,x ,t) (infer-core e Γ))))]
 
     [`(fold ,e)
-      (match (expand (infer-core e Γ) Γ)
+      (match (infer-core e Γ)
         [`(μ ,x ,t) `(μ ,x ,t)]
         [t (err (format "expected ~a to be recursive, got ~a" e t))])]
     [`(unfold ,e)
-      (match (expand (infer-core e Γ) Γ)
-        [`(μ ,x ,t) (replace t x `(μ ,x ,t))] ; AAAA
+      (match (infer-core e Γ)
+        [`(μ ,x ,t) (replace t x `(μ ,x ,t))]
         [t (err (format "expected ~a to be recursive, got ~a" e t))])]
 
     [`(λ (,x : ,t1) ,e)
       (let ([t2 (infer-core e (dict-set Γ x t1))])
-        (let ([k (+ 1 (max-level e t1 t2 (dict-set Γ x t1)))])  ; KNOB
-          `(,t1 → ,k ,t2)))]
+      (let ([t1 (expand t1 Γ)]) ; type annotation, must expand to weak-head normal form
+      (let ([k (+ 1 (max-level e t1 t2 (dict-set Γ x t1)))])  ; KNOB
+          `(,t1 → ,k ,t2))))]
     [`(,e1 ,e2)
       (match (infer-core e1 Γ)
         [`(,t1 → ,k ,t2)
@@ -321,16 +317,13 @@
 ;; Checks if a type is well-formed in the current context.
 ;;      (well-formed Type Context): Bool
 (define (well-formed t Γ)
-  (if (well-formed-friend t Γ) #t
-    (err (format "type ~a is not well-formed!" t))))
-(define (well-formed-friend t Γ)
   (match t
-    [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
+    [x #:when (dict-has-key? Γ x) (well-formed (dict-ref Γ x) Γ)]
     [(or 'Unit 'Nat 'Bool) #t]
-    [`(Ref ,t) (well-formed-friend t Γ)]
-    [`(μ ,x ,t) (well-formed-friend t (dict-set Γ x 'Unit))] ; HACK
+    [`(Ref ,t) (well-formed t Γ)]
+    [`(μ ,x ,t) (well-formed t (dict-set Γ x 'Unit))] ; todo: HACK
     [(or `(,t1 → ,t2) `(,t1 → ,_ ,t2) `(,t1 × ,t2) `(,t1 ⊕ ,t2))
-      (and (well-formed-friend t1 Γ) (well-formed-friend t2 Γ))]
+      (and (well-formed t1 Γ) (well-formed t2 Γ))]
     [_ #f]))
 
 ;;      (max-level Table[Sym, Type] Expr Type Type): Natural
@@ -487,13 +480,16 @@
    (next my_list)))))
   '(inr sole))
 
-(check-equal?
-  (infer '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
-    (λ (self : DoublyLinkedList)
-       (case (cdr (cdr (unfold self)))
-        (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
-        (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))))
-  '(DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit)))
+(check-true
+  (equiv?
+    (infer '(type DoublyLinkedList (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))
+      (λ (self : DoublyLinkedList)
+         (case (cdr (cdr (unfold self)))
+          (x ⇒ ((inl (! x)) : (DoublyLinkedList ⊕ Unit)))
+          (x ⇒ ((inr sole) : (DoublyLinkedList ⊕ Unit)))))))
+    '(DoublyLinkedList → 1 (DoublyLinkedList ⊕ Unit))
+    #hash((DoublyLinkedList . (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))))
+    #hash((DoublyLinkedList . (μ Self (Nat × (((Ref Self) ⊕ Unit) × ((Ref Self) ⊕ Unit))))))))
 
 (check-true
   (check
@@ -574,7 +570,7 @@
        (case (unfold self)
         (some ⇒ ((! (cdr (cdr some))) : DoublyLinkedList))
         (none ⇒ ((fold (inr sole)) : DoublyLinkedList))))))
-  '(DoublyLinkedList → 1 DoublyLinkedList))
+  '((μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit)) → 1 (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))))
 
 (check-true
   (equiv?
