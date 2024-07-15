@@ -7,9 +7,9 @@
 ;; Unit/String/Natural/Boolean, pairs, sums, lists, ascryption
 
 ;;      (interpret Expr Table[Sym, Expr]): Value
-(define (interpret expr [Γ #hash()])
-  (interpret- (strip (desugar expr)) Γ))
-(define (interpret- expr Γ)
+(define (interpret expr)
+  (interpret-core (strip (desugar expr)) #hash()))
+(define (interpret-core expr Γ)
   (match expr
     ['sole 'sole]
     [s #:when (string? s) s]
@@ -18,64 +18,64 @@
     [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
     [`(inc ,e)
-      (match (interpret- e Γ)
+      (match (interpret-core e Γ)
         [n #:when (natural? n) (+ n 1)]
         [e (format "incrementing an unknown value ~a" e)])]
     [`(if ,c ,e1 ,e2)
-      (match (interpret- c Γ)
-        ['#t (interpret- e1 Γ)]
-        ['#f (interpret- e2 Γ)]
+      (match (interpret-core c Γ)
+        ['#t (interpret-core e1 Γ)]
+        ['#f (interpret-core e2 Γ)]
         [e (err (format "calling if on unknown expression ~a" e))])]
 
     [`(pair ,e1 ,e2)
-      `(pair ,(interpret- e1 Γ) ,(interpret- e2 Γ))]
+      `(pair ,(interpret-core e1 Γ) ,(interpret-core e2 Γ))]
     [`(car ,e)
-      (match (interpret- e Γ)
+      (match (interpret-core e Γ)
         [`(pair ,e1 ,e2) e1]
         [e (err (format "calling car on unknown expression ~a" e))])]
     [`(cdr ,e)
-      (match (interpret- e Γ)
+      (match (interpret-core e Γ)
         [`(pair ,e1 ,e2) e2]
         [e (err (format "calling cdr on unknown expression ~a" e))])]
 
-    [`(inl ,e) `(inl ,(interpret- e Γ))]
-    [`(inr ,e) `(inr ,(interpret- e Γ))]
+    [`(inl ,e) `(inl ,(interpret-core e Γ))]
+    [`(inr ,e) `(inr ,(interpret-core e Γ))]
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
-      (match (interpret- e Γ)
-        [`(inl ,e) (interpret- e1 (dict-set Γ x1 e))]
-        [`(inr ,e) (interpret- e2 (dict-set Γ x2 e))]
+      (match (interpret-core e Γ)
+        [`(inl ,e) (interpret-core e1 (dict-set Γ x1 e))]
+        [`(inr ,e) (interpret-core e2 (dict-set Γ x2 e))]
         [e (err (format "calling case on unknown expression ~a" e))])]
 
     ['nil 'nil]
     [`(nil? ,e)
-      (match (interpret- e Γ)
+      (match (interpret-core e Γ)
         ['nil '#t]
         [`(cons ,e1 ,e2) '#f]
         [e (err (format "calling isnil on unknown expression ~a" e))])]
     [`(cons ,e1 ,e2)
-     `(cons ,(interpret- e1 Γ) ,(interpret- e2 Γ))]
+     `(cons ,(interpret-core e1 Γ) ,(interpret-core e2 Γ))]
     [`(head ,e)
-      (match (interpret- e Γ)
-        [`(cons ,e1 ,e2) (interpret- e1 Γ)]
+      (match (interpret-core e Γ)
+        [`(cons ,e1 ,e2) (interpret-core e1 Γ)]
         [e (err (format "calling head on unknown expression ~a" e))])]
     [`(tail ,e)
-      (match (interpret- e Γ)
-        [`(cons ,e1 ,e2) (interpret- e2 Γ)]
+      (match (interpret-core e Γ)
+        [`(cons ,e1 ,e2) (interpret-core e2 Γ)]
         [e (err (format "calling tail on unknown expression ~a" e))])]
 
     [`(λ ,x ,e) `(λ ,x ,e ,Γ)]
     [`(,e1 ,e2)
-      (match (interpret- e1 Γ)
+      (match (interpret-core e1 Γ)
         [`(λ ,x ,e ,env)
-          (interpret- e (dict-set env x (interpret- e2 Γ)))]
+          (interpret-core e (dict-set env x (interpret-core e2 Γ)))]
         [e (err (format "applying arg ~a to unknown expression ~a" e2 e))])]
 
     [e (err (format "interpreting an unknown expression ~a" e))]))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
-(define (check expr with [Γ #hash()])
-  (check- (desugar expr) with Γ))
-(define (check- expr with Γ)
+(define (check expr with)
+  (check-core (desugar expr) with #hash()))
+(define (check-core expr with Γ)
   (let ([with (expand with Γ)])
   (match* (expr with)
     [('sole 'Unit) #t]
@@ -83,67 +83,67 @@
     [(n 'Nat) #:when (natural? n) #t]
     [(b 'Bool) #:when (boolean? b) #t]
     [(e `(,t1 ⊕ ,t2))
-      (or (equiv? (infer- e Γ) with) (check- e t1 Γ) (check- e t2 Γ))]
+      (or (equiv? (infer-core e Γ) with) (check-core e t1 Γ) (check-core e t2 Γ))]
     [(x _) #:when (dict-has-key? Γ x)
       (equiv? (dict-ref Γ x) with Γ Γ)]
 
     [(`(type ,t1 ,t2 ,in) with)
-      (check- in with (dict-set Γ t1 t2))]
+      (check-core in with (dict-set Γ t1 t2))]
 
     [(`(inc ,e) 'Nat)
-      (check- e 'Nat Γ)]
+      (check-core e 'Nat Γ)]
     [(`(if ,c ,e1 ,e2) with)
-      (and (check- c 'Bool Γ)
-        (check- e1 with Γ) (check e2 with Γ))]
+      (and (check-core c 'Bool Γ)
+        (check-core e1 with Γ) (check e2 with Γ))]
 
     [(`(pair ,e1 ,e2) `(,t1 × ,t2))
-      (and (check- e1 t1 Γ) (check- e2 t2 Γ))]
+      (and (check-core e1 t1 Γ) (check-core e2 t2 Γ))]
     [(`(car ,e) with)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 × ,t2) (equiv? t1 with Γ Γ)]
         [t #f])]
     [(`(cdr ,e) with)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 × ,t2) (equiv? t2 with Γ Γ)]
         [t #f])]
 
     [(`(inl ,e) with)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 ⊕ ,t2) (equiv? t1 with Γ Γ)]
         [t #f])]
     [(`(inr ,e) with)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 ⊕ ,t2) (equiv? t2 with Γ Γ)]
         [t #f])]
     [(`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) with)
-      (equiv? with (infer- `(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) Γ) Γ Γ)]
+      (equiv? with (infer-core `(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) Γ) Γ Γ)]
     [(`(,e : ,t) with)
-      (and (equiv? t with Γ Γ) (check- e t Γ))]
+      (and (equiv? t with Γ Γ) (check-core e t Γ))]
 
     [('nil `(List ,t)) #t]
     [(`(cons ,f1 ,f2) `(List ,t))
-      (and (check- f1 t Γ) (check- f2 `(List ,t) Γ))]
+      (and (check-core f1 t Γ) (check-core f2 `(List ,t) Γ))]
     [(`(head ,e) with)
-      (match (infer- e)
+      (match (infer-core e)
         [`(List ,t) (equiv? t with Γ Γ)]
         [t #f])]
     [(`(tail ,e) with)
-      (equiv? (infer- e Γ) with Γ Γ)]
+      (equiv? (infer-core e Γ) with Γ Γ)]
 
     [(`(λ (,x : ,t) ,e) `(,t1 → ,t2))
-      (and (equiv? t t1 Γ Γ) (check- e t2 (dict-set Γ x t1)))]
+      (and (equiv? t t1 Γ Γ) (check-core e t2 (dict-set Γ x t1)))]
     [(`(,e1 ,e2) t)
-      (match (infer- e1 Γ)
+      (match (infer-core e1 Γ)
         [`(,t1 → ,t2)
-          (and (equiv? t2 t Γ Γ) (equiv? t1 (infer- e2 Γ) Γ Γ))]
+          (and (equiv? t2 t Γ Γ) (equiv? t1 (infer-core e2 Γ) Γ Γ))]
         [t #f])]
 
     [(e t) #f])))
 
 ;;      (infer Expr Table[Sym, Type]): Type
-(define (infer expr [Γ #hash()])
-  (infer- (desugar expr) Γ))
-(define (infer- expr Γ)
+(define (infer expr)
+  (infer-core (desugar expr) #hash()))
+(define (infer-core expr Γ)
   (match expr
     ['sole 'Unit]
     [s #:when (string? s) 'Str]
@@ -156,66 +156,66 @@
       (infer in (dict-set Γ t1 t2))]
 
     [`(inc ,e)
-      (if (check- e 'Nat Γ) 'Nat
-        (err (format "calling inc on incorrect type ~a" (infer- e Γ))))]
+      (if (check-core e 'Nat Γ) 'Nat
+        (err (format "calling inc on incorrect type ~a" (infer-core e Γ))))]
     [`(if ,c ,e1 ,e2)
-      (if (check- c 'Bool Γ)
-        (let ([t (infer- e1 Γ)])
-        (if (check- e2 t Γ) t
+      (if (check-core c 'Bool Γ)
+        (let ([t (infer-core e1 Γ)])
+        (if (check-core e2 t Γ) t
           (err (format "condition has branches of differing types ~a and ~a"
-            t (infer- e2 Γ)))))
-        (err (format "condition ~a has incorrect type ~a" c (infer- c Γ))))]
+            t (infer-core e2 Γ)))))
+        (err (format "condition ~a has incorrect type ~a" c (infer-core c Γ))))]
 
     [`(pair ,e1 ,e2)
-      `(,(infer- e1 Γ) × ,(infer- e2 Γ))]
+      `(,(infer-core e1 Γ) × ,(infer-core e2 Γ))]
     [`(car ,e)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 × ,t2) t1]
         [t (err (format "calling car on incorrect type ~a" t))])]
     [`(cdr ,e)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 × ,t2) t2]
         [t (err (format "calling cdr on incorrect type ~a" t))])]
 
     [`(inl ,e) ; annotations necessary
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 ⊕ ,t2) `(,t1 ⊕ ,t2)]
         [t (err (format "calling inl on incorrect type ~a" t))])]
     [`(inr ,e) ; annotations necessary
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,t1 ⊕ ,t2) `(,t1 ⊕ ,t2)]
         [t (err (format "calling inr on incorrect type ~a" t))])]
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(,a1 ⊕ ,a2)
-          (let ([b1 (infer- e1 (dict-set Γ x1 (expand a1 Γ)))] [b2 (infer- e2 (dict-set Γ x2 (expand a2 Γ)))])
+          (let ([b1 (infer-core e1 (dict-set Γ x1 (expand a1 Γ)))] [b2 (infer-core e2 (dict-set Γ x2 (expand a2 Γ)))])
             (if (equiv? b1 b2 Γ Γ) b1
               (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) b1 b2)))))]
         [t (err (format "calling case on incorrect type ~a" t))])]
     [`(,e : ,t)
-      (if (check- e t Γ) t
+      (if (check-core e t Γ) t
         (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
 
     ['nil (err (format "unable to infer type of empty list!"))]
     [`(cons ,e1 ,e2)
-      (let ([t (infer- e1 Γ)])
-      (if (check- e2 `(List ,t) Γ) `(List ,t)
+      (let ([t (infer-core e1 Γ)])
+      (if (check-core e2 `(List ,t) Γ) `(List ,t)
         (err (format "list ~a is not of consistent type!" `(cons ,e1 ,e2)))))]
     [`(head ,e)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(List ,t) t]
         [t (err (format "calling head on incorrect type ~a" t))])]
     [`(tail ,e)
-      (match (infer- e Γ)
+      (match (infer-core e Γ)
         [`(List ,t) `(List ,t)]
         [t (err (format "calling tail on incorrect type ~a" t))])]
 
     [`(λ (,x : ,t) ,e)
-      `(,t → ,(infer- e (dict-set Γ x t)))]
+      `(,t → ,(infer-core e (dict-set Γ x t)))]
     [`(,e1 ,e2)
-      (match (infer- e1 Γ)
+      (match (infer-core e1 Γ)
         [`(,t1 → ,t2)
-          (if (check- e2 t1 Γ) t2
+          (if (check-core e2 t1 Γ) t2
             (err (format "inferred argument type ~a does not match arg ~a" t1 e2)))]
         [t (err (format "expected → type on application body, got ~a" t))])]
 
