@@ -76,69 +76,82 @@
 (define (check expr with)
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
-  (let ([with (expand with Γ)])
-  (match* (expr with)
-    [('sole 'Unit) #t]
-    [(s 'Str) #:when (string? s) #t]
-    [(n 'Nat) #:when (natural? n) #t]
-    [(b 'Bool) #:when (boolean? b) #t]
-    [(e `(,t1 ⊕ ,t2))
-      (or (equiv? (infer-core e Γ) with) (check-core e t1 Γ) (check-core e t2 Γ))]
-    [(x _) #:when (dict-has-key? Γ x)
+  (match expr
+    ['sole (equal? 'Unit with)]
+    [s #:when (string? s) (equal? 'Str with)]
+    [n #:when (natural? n) (equal? 'Nat with)]
+    [b #:when (boolean? b) (equal? 'Bool with)]
+
+    [x #:when (dict-has-key? Γ x)
       (equiv? (dict-ref Γ x) with Γ Γ)]
 
-    [(`(type ,t1 ,t2 ,in) with)
+    [`(type ,t1 ,t2 ,in)
       (check-core in with (dict-set Γ t1 t2))]
 
-    [(`(inc ,e) 'Nat)
-      (check-core e 'Nat Γ)]
-    [(`(if ,c ,e1 ,e2) with)
+    [`(inc ,e)
+      (and (equiv? 'Nat with)
+        (check-core e 'Nat Γ))]
+    [`(if ,c ,e1 ,e2)
       (and (check-core c 'Bool Γ)
-        (check-core e1 with Γ) (check e2 with Γ))]
+        (check-core e1 with Γ) (check-core e2 with Γ))]
 
-    [(`(pair ,e1 ,e2) `(,t1 × ,t2))
-      (and (check-core e1 t1 Γ) (check-core e2 t2 Γ))]
-    [(`(car ,e) with)
+    [`(pair ,e1 ,e2)
+      (match with
+        [`(,t1 × ,t2) (and (check-core e1 t1 Γ) (check-core e2 t2 Γ))]
+        [_ #f])]
+    [`(car ,e)
       (match (infer-core e Γ)
         [`(,t1 × ,t2) (equiv? t1 with Γ Γ)]
-        [t #f])]
-    [(`(cdr ,e) with)
+        [_ #f])]
+    [`(cdr ,e)
       (match (infer-core e Γ)
         [`(,t1 × ,t2) (equiv? t2 with Γ Γ)]
-        [t #f])]
+        [_ #f])]
 
-    [(`(inl ,e) with)
+    [`(inl ,e)
       (match (infer-core e Γ)
         [`(,t1 ⊕ ,t2) (equiv? t1 with Γ Γ)]
-        [t #f])]
-    [(`(inr ,e) with)
+        [_ #f])]
+    [`(inr ,e)
       (match (infer-core e Γ)
         [`(,t1 ⊕ ,t2) (equiv? t2 with Γ Γ)]
-        [t #f])]
-    [(`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) with)
-      (equiv? with (infer-core `(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2)) Γ) Γ Γ)]
-    [(`(,e : ,t) with)
+        [_ #f])]
+    [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
+      (match (infer-core e Γ)
+        [`(,a1 ⊕ ,a2)
+          (and (check-core e1 with (dict-set Γ x1 a1))
+            (check-core e2 with (dict-set Γ x2 a2)))]
+        [_ #f])]
+    [`(,e : ,t)
       (and (equiv? t with Γ Γ) (check-core e t Γ))]
 
-    [('nil `(List ,t)) #t]
-    [(`(cons ,f1 ,f2) `(List ,t))
-      (and (check-core f1 t Γ) (check-core f2 `(List ,t) Γ))]
-    [(`(head ,e) with)
+    ['nil
+      (match with
+        [`(List ,t) #t]
+        [_ #f])]
+    [`(cons ,f1 ,f2)
+      (match with
+        [`(List ,t) (and (check-core f1 t Γ) (check-core f2 `(List ,t) Γ))]
+        [_ #f])]
+    [`(head ,e)
       (match (infer-core e)
         [`(List ,t) (equiv? t with Γ Γ)]
-        [t #f])]
-    [(`(tail ,e) with)
+        [_ #f])]
+    [`(tail ,e)
       (equiv? (infer-core e Γ) with Γ Γ)]
 
-    [(`(λ (,x : ,t) ,e) `(,t1 → ,t2))
-      (and (equiv? t t1 Γ Γ) (check-core e t2 (dict-set Γ x t1)))]
-    [(`(,e1 ,e2) t)
+    [`(λ (,x : ,t) ,e)
+      (match with
+        [`(,t1 → ,t2)
+          (and (equiv? t1 t Γ Γ) (check-core e t2 (dict-set Γ x t1)))]
+        [_ #f])]
+    [`(,e1 ,e2)
       (match (infer-core e1 Γ)
         [`(,t1 → ,t2)
-          (and (equiv? t2 t Γ Γ) (equiv? t1 (infer-core e2 Γ) Γ Γ))]
-        [t #f])]
+          (and (equiv? t2 with Γ Γ) (equiv? t1 (infer-core e2 Γ) Γ Γ))]
+        [_ #f])]
 
-    [(e t) #f])))
+    [_ (equiv? (infer-core expr Γ) with Γ Γ)]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr)
@@ -150,10 +163,13 @@
     [n #:when (natural? n) 'Nat]
     [b #:when (boolean? b) 'Bool]
     [x #:when (dict-has-key? Γ x)
-      (dict-ref Γ x)]
+      (expand (dict-ref Γ x) Γ)]
 
     [`(type ,t1 ,t2 ,in)
-      (infer in (dict-set Γ t1 t2))]
+      (infer-core in (dict-set Γ t1 t2))]
+    [`(,e : ,t)
+      (if (check-core e (expand t Γ) Γ) (expand t Γ)
+        (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
 
     [`(inc ,e)
       (if (check-core e 'Nat Γ) 'Nat
@@ -192,9 +208,6 @@
             (if (equiv? b1 b2 Γ Γ) b1
               (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) b1 b2)))))]
         [t (err (format "calling case on incorrect type ~a" t))])]
-    [`(,e : ,t)
-      (if (check-core e t Γ) t
-        (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
 
     ['nil (err (format "unable to infer type of empty list!"))]
     [`(cons ,e1 ,e2)
@@ -211,7 +224,7 @@
         [t (err (format "calling tail on incorrect type ~a" t))])]
 
     [`(λ (,x : ,t) ,e)
-      `(,t → ,(infer-core e (dict-set Γ x t)))]
+      `(,(expand t Γ) → ,(infer-core e (dict-set Γ x t)))]
     [`(,e1 ,e2)
       (match (infer-core e1 Γ)
         [`(,t1 → ,t2)
@@ -222,16 +235,16 @@
     [e (err (format "inferring an unknown expression ~a" e))]))
 
 (define (expand t Γ)
-  (if (dict-has-key? Γ t) (dict-ref Γ t) t))
+  (if (dict-has-key? Γ t) (expand (dict-ref Γ t) Γ) t))
 
 ;; checks if two expressions are equivalent up to α-renaming and ascryption
-(define (equiv? e1 e2 [Γ1 #hash()] [Γ2 #hash()])
+(define (equiv? e1 e2 Γ1 Γ2)
   (match* (e1 e2)
     [(x1 x2) #:when (dict-has-key? Γ1 x1)
       (equiv? (dict-ref Γ1 x1) x2 Γ1 Γ2)]
     [(x1 x2) #:when (dict-has-key? Γ2 x2)
       (equiv? x1 (dict-ref Γ2 x2) Γ1 Γ2)]
-    [(`(λ (,x1 : ,t1) ,e1) `(λ (,x2 : ,t2) ,e2)) ; todo: merge these into one
+    [(`(λ (,x1 : ,t1) ,e1) `(λ (,x2 : ,t2) ,e2))
       (let ([name gensym])
       (and (equiv? e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name))
         (equiv? t1 t2 Γ1 Γ2)))]
@@ -241,10 +254,10 @@
     [(`(,l1 ...) `(,l2 ...))
       (foldl (λ (x1 x2 acc) (if (equiv? x1 x2 Γ1 Γ2) acc #f)) #t l1 l2)]
     [(v1 v2) (equal? v1 v2)]))
-(check-true (equiv? '(λ a a) '(λ b b)))
-(check-true (equiv? '(λ a (λ b a)) '(λ b (λ a b))))
-(check-true (equiv? '(λ a (λ b (λ c (a (b c))))) '(λ c (λ a (λ b (c (a b)))))))
 
+(check-true (equiv? '(λ a a) '(λ b b) #hash() #hash()))
+(check-true (equiv? '(λ a (λ b a)) '(λ b (λ a b)) #hash() #hash()))
+(check-true (equiv? '(λ a (λ b (λ c (a (b c))))) '(λ c (λ a (λ b (c (a b))))) #hash() #hash()))
 (check-eq? (interpret '(if #t 1 0)) 1)
 (check-eq? (interpret '(type Natural Nat ((λ (x : Natural) (inc x)) 1))) 2)
 (check-eq? (infer '(type Natural Nat ((λ (x : Natural) (inc x)) 1))) 'Nat)

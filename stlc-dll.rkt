@@ -1,5 +1,6 @@
 #lang racket
 (require "lib.rkt")
+(require (only-in "stlc-rec.rkt" replace))
 (require rackunit)
 
 ;; The Simply-Typed Lambda Calculus with higher-order *impredicative* references,
@@ -14,7 +15,6 @@
 (define (interpret expr)
   (interpret-core (strip (desugar expr)) #hash() (make-hash)))
 (define (interpret-core expr Γ Σ)
-  ; (print (format "interpret: ~a" (fmt expr)))
   (match expr
     ['sole 'sole]
     [n #:when (natural? n) n]
@@ -88,13 +88,12 @@
 (define (check expr with)
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
-  ; (print (format "check: ~a with ~a" (fmt expr) with))
   (match expr
     [`(type ,t1 ,t2 ,in)
       (check-core in with (dict-set Γ t1 t2))]
 
     [`(inc ,e)
-      (and (equiv? with 'Nat)
+      (and (equiv? 'Nat with)
         (check-core e 'Nat Γ))]
     [`(if ,c ,e1 ,e2)
       (and (check-core c 'Bool Γ)
@@ -103,42 +102,42 @@
     [`(pair ,e1 ,e2)
       (match with
         [`(,t1 × ,t2) (and (check-core e1 t1 Γ) (check-core e2 t2 Γ))]
-        [t #f])]
+        [_ #f])]
     [`(car ,e)
       (match (infer-core e Γ)
         [`(,t1 × ,t2) (equiv? t1 with Γ Γ)]
-        [t #f])]
+        [_ #f])]
     [`(cdr ,e)
       (match (infer-core e Γ)
         [`(,t1 × ,t2) (equiv? t2 with Γ Γ)]
-        [t #f])]
+        [_ #f])]
 
     [`(inl ,e)
       (match with
         [`(,t1 ⊕ ,t2) (check-core e t1 Γ)]
-        [t #f])]
+        [_ #f])]
     [`(inr ,e)
       (match with
         [`(,t1 ⊕ ,t2) (check-core e t2 Γ)]
-        [t #f])]
+        [_ #f])]
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
       (match (infer-core e Γ)
         [`(,a1 ⊕ ,a2)
           (and (check-core e1 with (dict-set Γ x1 a1))
             (check-core e2 with (dict-set Γ x2 a2)))]
-        [t #f])]
+        [_ #f])]
 
     [`(new ,e)
       (match with
         [`(Ref ,t) (check-core e t Γ)]
-        [t #f])]
+        [_ #f])]
     [`(! ,e) (check-core e `(Ref ,with) Γ)]
     [`(set ,e1 ,e2)
       (match (infer-core e1 Γ)
         [`(Ref ,t)
-          (and (equiv? with 'Unit Γ Γ)
+          (and (equiv? 'Unit with Γ Γ)
             (check-core e2 t Γ))]
-        [t #f])]
+        [_ #f])]
 
     ; [`(fold (μ ,x ,t) ,e)
     ;   (match with
@@ -147,23 +146,23 @@
     [`(fold ,e)
       (match with
         [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))]
-        [t #f])]
+        [_ #f])]
 
     [`(λ (,x : ,t) ,e)
       (match with
         [`(,t1 → ,k ,t2)
           (and (equiv? t t1 Γ Γ) (check-core e t2 (dict-set Γ x t))
             (> k (max-level e t1 t2 (dict-set Γ x t1))))] ; KNOB
-        [t #f])]
+        [_ #f])]
     [`(,e1 ,e2)
       (match (infer-core e1 Γ)
         [`(,t1 → ,_ ,t2)
-          (and (equiv? with t2 Γ Γ)
+          (and (equiv? t2 with Γ Γ)
             (check-core e2 t1 Γ))]
-        [t #f])]
+        [_ #f])]
 
 
-    [_ (equiv? with (infer-core expr Γ) Γ Γ)]))
+    [_ (equiv? (infer-core expr Γ) with Γ Γ)]))
 
 ;; Checks if two expressions or types are equivalent, up to α-conversion,
 ;; given their respective contexts
@@ -203,7 +202,6 @@
 (define (infer expr)
   (infer-core (desugar expr) #hash()))
 (define (infer-core expr Γ)
-  ; (print (format "infer: ~a" (fmt expr)))
   (match expr
     ['sole 'Unit]
     [n #:when (natural? n) 'Nat]
@@ -305,15 +303,6 @@
 (define (expand t Γ)
   (if (dict-has-key? Γ t) (expand (dict-ref Γ t) Γ) t))
 
-(define (replace expr key value)
-  (match expr
-    ; do not accidentally replace shadowed bindings
-    [(or `(λ (,x : ,_) ,_) `(λ ,x ,_) `(μ ,x ,_)
-      `(type ,x ,_ ,_)) #:when (equal? x key) expr]
-    [x #:when (equal? x key) value]
-    [`(,e ...) `(,@(map (λ (x) (replace x key value)) e))]
-    [v v]))
-
 ;; Checks if a type is well-formed in the current context.
 ;;      (well-formed Type Context): Bool
 (define (well-formed t Γ)
@@ -322,7 +311,7 @@
     [(or 'Unit 'Nat 'Bool) #t]
     [`(Ref ,t) (well-formed t Γ)]
     [`(μ ,x ,t) (well-formed t (dict-set Γ x 'Unit))] ; todo: HACK
-    [(or `(,t1 → ,t2) `(,t1 → ,_ ,t2) `(,t1 × ,t2) `(,t1 ⊕ ,t2))
+    [(or `(,t1 → ,_ ,t2) `(,t1 × ,t2) `(,t1 ⊕ ,t2))
       (and (well-formed t1 Γ) (well-formed t2 Γ))]
     [_ #f]))
 

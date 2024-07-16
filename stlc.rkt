@@ -18,16 +18,20 @@
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
 (define (check expr with [Γ #hash()])
-  (match* (expr with)
-    [(x _) #:when (dict-has-key? Γ x)
+  (match expr
+    [x #:when (dict-has-key? Γ x)
       (equal? (dict-ref Γ x) with)]
-    [(`(λ (,x : ,t) ,e) `(,t1 → ,t2))
-      (and (equal? t t1) (check e t2 (dict-set Γ x t1)))]
-    [(`(,e1 ,e2) t)
+    [`(λ (,x : ,t) ,e)
+      (match with
+        [`(,t1 → ,t2)
+          (and (equal? t t1) (check e t2 (dict-set Γ x)))]
+        [_ #f])]
+    [`(,e1 ,e2)
       (match (infer e1 Γ)
-        [`(,t1 → ,t2) (and (equal? t2 t) (equal? t1 (infer e2 Γ)))]
-        [t #f])]
-    [(e t) #f]))
+        [`(,t1 → ,t2)
+          (and (equal? t2 with) (equal? t1 (infer e2 Γ)))]
+        [_ #f])]
+    [_ #f]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr [Γ #hash()])

@@ -7,7 +7,6 @@
 (define (interpret expr)
   (interpret-core (strip (desugar expr)) #hash() (make-hash)))
 (define (interpret-core expr Γ Σ)
-  ; (print (format "interpret: ~a" (fmt expr)))
   (match expr
     ['sole 'sole]
     [n #:when (natural? n) n]
@@ -42,35 +41,43 @@
 (define (check expr with)
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
-  ; (print (format "check: ~a" (fmt expr)))
-  (match* (expr with)
-    [('sole 'Unit) #t]
-    [(n 'Nat) #:when (natural? n) #t]
-    [(x _) #:when (dict-has-key? Γ x)
+  (match expr
+    ['sole
+      (equal? 'Unit with)]
+    [n #:when (natural? n)
+      (equal? 'Nat with)]
+    [x #:when (dict-has-key? Γ x)
       (equal? (dict-ref Γ x) with)]
 
-    [(`(new ,e) `(Ref ,t)) (check-core e t Γ)]
-    [(`(! ,e) t) (check-core e `(Ref ,t) Γ)]
-    [(`(set ,e1 ,e2) 'Unit)
+    [`(new ,e)
+      (match with
+        [`(Ref ,t) (check-core e t Γ)]
+        [_ #f])]
+    [`(! ,e) (check-core e `(Ref ,with) Γ)]
+    [`(set ,e1 ,e2)
       (match (infer-core e1 Γ)
-        [`(Ref ,t) (check-core e2 t Γ)]
-        [t #f])]
+        [`(Ref ,t)
+          (and (equal? 'Unit with)
+            (check-core e2 t Γ))]
+        [_ #f])]
 
-    [(`(λ (,x : ,t) ,e) `(,t1 → ,t2))
-      (and (equal? t t1) (check-core e t2 (dict-set Γ x t1)))]
-    [(`(,e1 ,e2) t)
+    [`(λ (,x : ,t) ,e)
+      (match with
+        [`(,t1 → ,t2)
+          (and (equal? t1 t) (check-core e t2 (dict-set Γ x t1)))]
+        [_ #f])]
+    [`(,e1 ,e2)
       (match (infer-core e1 Γ)
         [`(,t1 → ,t2)
-          (and (equal? t2 t) (equal? t1 (infer-core e2 Γ)))]
-        [t #f])]
+          (and (equal? t2 with) (equal? t1 (infer-core e2 Γ)))]
+        [_ #f])]
 
-    [(e t) #f]))
+    [_ #f]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr)
   (infer-core (desugar expr) #hash()))
 (define (infer-core expr Γ)
-  ; (print (format "infer: ~a" (fmt expr)))
   (match expr
     ['sole 'Unit]
     [n #:when (natural? n) 'Nat]

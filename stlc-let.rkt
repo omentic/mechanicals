@@ -22,18 +22,22 @@
 (define (check expr with)
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
-  (match* (expr with)
-    [('sole 'Unit) #t]
-    [(n 'Nat) #:when (natural? n) #t]
-    [(x _) #:when (dict-has-key? Γ x)
+  (match with
+    ['sole (equal? 'Unit with)]
+    [n #:when (natural? n) (equal? 'Nat with)]
+    [x #:when (dict-has-key? Γ x)
       (equal? (dict-ref Γ x) with)]
-    [(`(λ (,x : ,t) ,e) `(,t1 → ,t2))
-      (and (equal? t t1) (check-core e t2 (dict-set Γ x t1)))]
-    [(`(,e1 ,e2) t)
+    [`(λ (,x : ,t) ,e)
+      (match with
+        [`(,t1 → ,t2)
+          (and (equal? t1 t) (check-core e t2 (dict-set Γ x t1)))]
+        [_ #f])]
+    [`(,e1 ,e2)
       (match (infer-core e1 Γ)
-        [`(,t1 → ,t2) (and (equal? t2 t) (equal? t1 (infer-core e2 Γ)))]
-        [t #f])]
-    [(e t) #f]))
+        [`(,t1 → ,t2)
+          (and (equal? t2 with) (equal? t1 (infer-core e2 Γ)))]
+        [_ #f])]
+    [_ #f]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr)

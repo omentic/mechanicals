@@ -1,6 +1,6 @@
 #lang racket
 (require "lib.rkt")
-(require (only-in "stlc-ext.rkt" equiv?))
+(provide (all-defined-out))
 
 ;; The Simply-Typed Lambda Calculus with iso-recursive types
 
@@ -40,35 +40,34 @@
 (define (check expr with)
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
-  ; (print (format "check: ~a" (fmt expr)))
-  (match* (expr with)
-    [('sole 'Unit) #t]
-    [(n 'Nat) #:when (natural? n) #t]
-    [(x _) #:when (dict-has-key? Γ x)
+  (match expr
+    ['sole (equal? 'Unit with)]
+    [n #:when (natural? n) (equal? 'Nat with)]
+    [x #:when (dict-has-key? Γ x)
       (equal? (dict-ref Γ x) with)]
 
-    [(`(fold (μ ,x ,t) ,e) `(μ ,x ,t))
-      (check-core e t (dict-set Γ x `(μ ,x ,t)))]
-    [(`(unfold (μ ,x ,t) ,e) with)
-      (and (check-core e `(μ ,x ,t) Γ)
-        (equiv? with t #hash() #hash((x . `(μ ,x ,t)))))]
+    [`(fold (μ ,x ,t) ,e)
+      (match with
+        [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))]
+        [_ #f])]
 
-    [(`(λ (,x : ,t) ,e) `(,t1 → ,t2))
-      (and (equal? t t1) (check-core e t2 (dict-set Γ x t1)))]
-
-    [(`(,e1 ,e2) t)
+    [`(λ (,x : ,t) ,e)
+      (match with
+        [`(,t1 → ,t2)
+          (and (equal? t1 t) (check-core e t2 (dict-set Γ x t1)))]
+        [_ #f])]
+    [`(,e1 ,e2)
       (match (infer-core e1 Γ)
         [`(,t1 → ,t2)
-          (and (equal? t2 t) (equal? t1 (infer-core e2 Γ)))]
-        [t #f])]
+          (and (equal? t2 with) (equal? t1 (infer-core e2 Γ)))]
+        [_ #f])]
 
-    [(e t) #f]))
+    [_ (equal? (infer-core expr Γ) with)]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr)
   (infer-core (desugar expr) #hash()))
 (define (infer-core expr Γ)
-  ; (print (format "infer: ~a" (fmt expr)))
   (match expr
     ['sole 'Unit]
     [n #:when (natural? n) 'Nat]
@@ -96,3 +95,13 @@
         [t (err (format "expected → type on application body, got ~a" t))])]
 
     [e (err (format "attempting to infer an unknown expression ~a" e))]))
+
+;; Replace all references to an expression with a value.
+(define (replace expr key value)
+  (match expr
+    ; do not accidentally replace shadowed bindings
+    [(or `(λ (,x : ,_) ,_) `(λ ,x ,_) `(μ ,x ,_)
+      `(type ,x ,_ ,_)) #:when (equal? x key) expr]
+    [x #:when (equal? x key) value]
+    [`(,e ...) `(,@(map (λ (x) (replace x key value)) e))]
+    [v v]))
