@@ -318,59 +318,63 @@
 ;;      (max-level Table[Sym, Type] Expr Type Type): Natural
 (define (max-level e t1 t2 Γ)
   (max
+    (level-body e Γ)
     (level-type t1 Γ)
-    (level-type t2 Γ)
-    (level-body e Γ)))
+    (level-type t2 Γ)))
+;; Checks if a type is well-kinded with respect to a level in the current context
+;;      (well-kinded Type Level Context): Bool
+(define (well-kinded t l Γ)
+  (match t
+    [x #:when (dict-has-key? Γ x)
+      (well-kinded (dict-ref Γ x) l Γ)]
+    [(or 'Unit 'Nat 'Bool) (>= l 0)]
+    [`(Ref ,t)
+      (if (zero? l)
+        (well-kinded t l Γ)
+        (well-kinded t (- l 1) Γ))]
+    [`(μ ,x ,t)
+      (well-kinded t l (dict-set Γ x 'Unit))] ; FIXME
+    [`(,t1 → ,k ,t2)
+      (and (>= l k) (well-kinded t1 k Γ) (well-kinded t2 k Γ))]
+    [(or `(,t1 × ,t2) `(,t1 ⊕ ,t2))
+      (and (well-kinded t1 l Γ) (well-kinded t2 l Γ))]
+    [_ #f]))
 
 ;;      (level-type Type): Natural
 (define (level-type t Γ)
-  (match (expand t Γ)
-    ['Unit 0]
-    ['Nat 0]
-    [`(,t1 × ,t2) (max (level-type t1 Γ) (level-type t2 Γ))]
-    [`(,t1 ⊕ ,t2) (max (level-type t1 Γ) (level-type t2 Γ))]
-    [`(μ ,x ,t) (level-type t (dict-set Γ x 'Unit))] ; VERY WEIRD
+  (match t
+    [x #:when (dict-has-key? Γ x)
+      (level-type (dict-ref Γ x) Γ)]
+    [(or 'Unit 'Nat) 0]
+    [(or `(,t1 × ,t2) `(,t1 ⊕ ,t2))
+      (max (level-type t1 Γ) (level-type t2 Γ))]
+    [`(μ ,x ,t) ; fixme: correct, ish, but VERY WEIRD
+      (level-type t (dict-set Γ x 'Unit))]
     [`(,t1 → ,k ,t2)
-      (if (or (< k (level-type t1 Γ)) (< k (level-type t2 Γ)))
-        (err (format "annotated level ~a is less than inferred levels of ~a and ~a!"
-          k t1 t2))
-        k)]
+      (if (and (> k (level-type t1 Γ)) (> k (level-type t2 Γ))) k ; KNOB
+        (err (format "annotated level ~a is less than inferred levels of ~a and ~a!" k t1 t2)))]
     [`(Ref ,t)
       (let ([k (level-type t Γ)])
       (if (zero? k) 0 (+ 1 k)))] ; KNOB
     [t (err (format "attempting to infer the level of unknown type ~a" t))]))
 
+;; Infers the level of a (well-formed) expression.
 ;;      (level-body Expr Table[Sym, Type]): Natural
-(define (level-body e Γ) ; FIXME: this part is mostly wrong
+(define (level-body e Γ)
   (match e
-    [`(,e : ,t) (level-type t Γ)] ; hrm
     ['sole 0]
     [n #:when (natural? n) 0]
-    [x #:when (dict-has-key? Γ x)
-      (level-type (dict-ref Γ x) Γ)]
-    [`(inc ,e) (level-body e Γ)]
-    [`(new ,e) (level-body e Γ)]
-
-    [`(pair ,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
-    [`(car ,e) (level-body e Γ)]
-    [`(cdr ,e) (level-body e Γ)]
-    [`(inl ,e) (level-body e Γ)]
-    [`(inr ,e) (level-body e Γ)]
-    [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
-      (max (level-body e Γ)
-           (level-body e1 (dict-set Γ x1 'Unit)) ; FIXME: totally incorrect
-           (level-body e2 (dict-set Γ x2 'Unit)))]
-    [`(fold (μ ,x ,t) ,e) (level-body e Γ)]
-    [`(unfold (μ ,x ,t) ,e) (level-body e Γ)]
-    [`(fold ,e) (level-body e Γ)]
-    [`(unfold ,e) (level-body e Γ)]
-
-    [`(! ,e) (level-body e Γ)]
-    [`(set ,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]
-    [`(if ,c ,e1 ,e2) (max (level-body c Γ) (level-body e1 Γ) (level-body e2 Γ))]
-    [`(λ (,x : ,t) ,e) (level-body e (dict-set Γ x t))] ; todo: should be 0?
-    [`(,e1 ,e2) (max (level-body e1 Γ) (level-body e2 Γ))]))
-
+    [x #:when (dict-has-key? Γ x) ; free variables
+      (level-type (expand (dict-ref Γ x) Γ) Γ)]
+    [(or `(,e : ,_) `(λ (,_ : ,_) ,e)
+      `(inc ,e) `(new ,e) `(! ,e) `(car ,e) `(cdr ,e) `(inl ,e) `(inr ,e)
+      `(fold ,e) `(unfold ,e) `(fold (μ ,_ ,_) ,e) `(unfold (μ ,_ ,_) ,e))
+      (level-body e Γ)]
+    [(or `(set ,e1 ,e2) `(pair ,e1 ,e2) `(,e1 ,e2))
+      (max (level-body e1 Γ) (level-body e2 Γ))]
+    [(or `(if ,c ,e1 ,e2) `(case ,c (,_ ⇒ ,e1) (,_ ⇒ ,e2)))
+      (max (level-body c Γ) (level-body e1 Γ) (level-body e2 Γ))]
+    [x #:when (symbol? x) 0])) ; local variables, not in Γ
 
 (check-exn
   exn:fail?
