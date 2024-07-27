@@ -41,11 +41,6 @@
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
   (match expr
-    ['sole (equal? 'Unit with)]
-    [n #:when (natural? n) (equal? 'Nat with)]
-    [x #:when (dict-has-key? Γ x)
-      (equal? (dict-ref Γ x) with)]
-
     [`(fold (μ ,x ,t) ,e)
       (match with
         [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))]
@@ -55,11 +50,6 @@
       (match with
         [`(,t1 → ,t2)
           (and (equal? t1 t) (check-core e t2 (dict-set Γ x t1)))]
-        [_ #f])]
-    [`(,e1 ,e2)
-      (match (infer-core e1 Γ)
-        [`(,t1 → ,t2)
-          (and (equal? t2 with) (equal? t1 (infer-core e2 Γ)))]
         [_ #f])]
 
     [_ (equal? (infer-core expr Γ) with)]))

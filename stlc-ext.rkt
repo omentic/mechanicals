@@ -77,20 +77,9 @@
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
   (match expr
-    ['sole (equal? 'Unit with)]
-    [s #:when (string? s) (equal? 'Str with)]
-    [n #:when (natural? n) (equal? 'Nat with)]
-    [b #:when (boolean? b) (equal? 'Bool with)]
-
-    [x #:when (dict-has-key? Γ x)
-      (equiv? (dict-ref Γ x) with Γ Γ)]
-
     [`(type ,t1 ,t2 ,in)
       (check-core in with (dict-set Γ t1 t2))]
 
-    [`(inc ,e)
-      (and (equiv? 'Nat with)
-        (check-core e 'Nat Γ))]
     [`(if ,c ,e1 ,e2)
       (and (check-core c 'Bool Γ)
         (check-core e1 with Γ) (check-core e2 with Γ))]
@@ -99,22 +88,14 @@
       (match with
         [`(,t1 × ,t2) (and (check-core e1 t1 Γ) (check-core e2 t2 Γ))]
         [_ #f])]
-    [`(car ,e)
-      (match (infer-core e Γ)
-        [`(,t1 × ,t2) (equiv? t1 with Γ Γ)]
-        [_ #f])]
-    [`(cdr ,e)
-      (match (infer-core e Γ)
-        [`(,t1 × ,t2) (equiv? t2 with Γ Γ)]
-        [_ #f])]
 
     [`(inl ,e)
-      (match (infer-core e Γ)
-        [`(,t1 ⊕ ,t2) (equiv? t1 with Γ Γ)]
+      (match with
+        [`(,t1 ⊕ ,t2) (check-core e t1 Γ)]
         [_ #f])]
     [`(inr ,e)
-      (match (infer-core e Γ)
-        [`(,t1 ⊕ ,t2) (equiv? t2 with Γ Γ)]
+      (match with
+        [`(,t1 ⊕ ,t2) (check-core e t2 Γ)]
         [_ #f])]
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
       (match (infer-core e Γ)
@@ -122,8 +103,6 @@
           (and (check-core e1 with (dict-set Γ x1 a1))
             (check-core e2 with (dict-set Γ x2 a2)))]
         [_ #f])]
-    [`(,e : ,t)
-      (and (equiv? t with Γ Γ) (check-core e t Γ))]
 
     ['nil
       (match with
@@ -131,24 +110,15 @@
         [_ #f])]
     [`(cons ,f1 ,f2)
       (match with
-        [`(List ,t) (and (check-core f1 t Γ) (check-core f2 `(List ,t) Γ))]
+        [`(List ,t)
+          (and (check-core f1 t Γ)
+            (check-core f2 `(List ,t) Γ))]
         [_ #f])]
-    [`(head ,e)
-      (match (infer-core e)
-        [`(List ,t) (equiv? t with Γ Γ)]
-        [_ #f])]
-    [`(tail ,e)
-      (equiv? (infer-core e Γ) with Γ Γ)]
 
     [`(λ (,x : ,t) ,e)
       (match with
         [`(,t1 → ,t2)
           (and (equiv? t1 t Γ Γ) (check-core e t2 (dict-set Γ x t1)))]
-        [_ #f])]
-    [`(,e1 ,e2)
-      (match (infer-core e1 Γ)
-        [`(,t1 → ,t2)
-          (and (equiv? t2 with Γ Γ) (equiv? t1 (infer-core e2 Γ) Γ Γ))]
         [_ #f])]
 
     [_ (equiv? (infer-core expr Γ) with Γ Γ)]))
@@ -204,9 +174,10 @@
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
       (match (infer-core e Γ)
         [`(,a1 ⊕ ,a2)
-          (let ([b1 (infer-core e1 (dict-set Γ x1 (expand a1 Γ)))] [b2 (infer-core e2 (dict-set Γ x2 (expand a2 Γ)))])
-            (if (equiv? b1 b2 Γ Γ) b1
-              (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) b1 b2)))))]
+          (let ([b1 (infer-core e1 (dict-set Γ x1 (expand a1 Γ)))]
+            [b2 (infer-core e2 (dict-set Γ x2 (expand a2 Γ)))])
+          (if (equiv? b1 b2 Γ Γ) b1
+            (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) b1 b2)))))]
         [t (err (format "calling case on incorrect type ~a" t))])]
 
     ['nil (err (format "unable to infer type of empty list!"))]
@@ -234,8 +205,11 @@
 
     [e (err (format "inferring an unknown expression ~a" e))]))
 
+;; Expands a type alias into weak-head normal form, for literal matching.
+;;      (expand Type Table[Id, Expr ⊕ Type]): Type
 (define (expand t Γ)
-  (if (dict-has-key? Γ t) (expand (dict-ref Γ t) Γ) t))
+  (if (dict-has-key? Γ t)
+    (expand (dict-ref Γ t) Γ) t))
 
 ;; checks if two expressions are equivalent up to α-renaming and ascryption
 (define (equiv? e1 e2 Γ1 Γ2)

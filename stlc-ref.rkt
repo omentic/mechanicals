@@ -42,37 +42,19 @@
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
   (match expr
-    ['sole
-      (equal? 'Unit with)]
-    [n #:when (natural? n)
-      (equal? 'Nat with)]
-    [x #:when (dict-has-key? Γ x)
-      (equal? (dict-ref Γ x) with)]
-
     [`(new ,e)
       (match with
         [`(Ref ,t) (check-core e t Γ)]
         [_ #f])]
     [`(! ,e) (check-core e `(Ref ,with) Γ)]
-    [`(set ,e1 ,e2)
-      (match (infer-core e1 Γ)
-        [`(Ref ,t)
-          (and (equal? 'Unit with)
-            (check-core e2 t Γ))]
-        [_ #f])]
 
     [`(λ (,x : ,t) ,e)
       (match with
         [`(,t1 → ,t2)
           (and (equal? t1 t) (check-core e t2 (dict-set Γ x t1)))]
         [_ #f])]
-    [`(,e1 ,e2)
-      (match (infer-core e1 Γ)
-        [`(,t1 → ,t2)
-          (and (equal? t2 with) (equal? t1 (infer-core e2 Γ)))]
-        [_ #f])]
 
-    [_ #f]))
+    [_ (equal? (infer-core expr Γ) with)]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr)
@@ -81,8 +63,7 @@
   (match expr
     ['sole 'Unit]
     [n #:when (natural? n) 'Nat]
-    [x #:when (dict-has-key? Γ x)
-      (dict-ref Γ x)]
+    [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
 
     [`(new ,e) `(Ref ,(infer-core e Γ))]
     [`(! ,e)

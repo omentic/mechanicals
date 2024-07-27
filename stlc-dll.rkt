@@ -1,6 +1,7 @@
 #lang racket
 (require "lib.rkt")
 (require (only-in "stlc-rec.rkt" replace))
+(require (only-in "stlc-ext.rkt" expand))
 
 ;; The Simply-Typed Lambda Calculus with higher-order *impredicative* references,
 ;; plus sums products booleans ascryption etc, to implement doubly-linked lists
