@@ -1,7 +1,6 @@
 #lang racket
 (require "lib.rkt")
-(require rackunit)
-(provide (all-defined-out))
+(provide interpret check infer expand equiv-type equiv-term)
 
 ;; The Simply-Typed Lambda Calculus, with simple extensions
 ;; Unit/String/Natural/Boolean, pairs, sums, lists, ascryption
@@ -118,10 +117,10 @@
     [`(λ (,x : ,t) ,e)
       (match with
         [`(,t1 → ,t2)
-          (and (equiv? t1 t Γ Γ) (check-core e t2 (dict-set Γ x t1)))]
+          (and (equiv-type t1 t Γ) (check-core e t2 (dict-set Γ x t1)))]
         [_ #f])]
 
-    [_ (equiv? (infer-core expr Γ) with Γ Γ)]))
+    [_ (equiv-type (infer-core expr Γ) with Γ)]))
 
 ;;      (infer Expr Table[Sym, Type]): Type
 (define (infer expr)
@@ -176,7 +175,7 @@
         [`(,a1 ⊕ ,a2)
           (let ([b1 (infer-core e1 (dict-set Γ x1 (expand a1 Γ)))]
             [b2 (infer-core e2 (dict-set Γ x2 (expand a2 Γ)))])
-          (if (equiv? b1 b2 Γ Γ) b1
+          (if (equiv-type b1 b2 Γ) b1
             (err (format "case ~a is not of consistent type!" `(case (,a1 ⊕ ,a2) b1 b2)))))]
         [t (err (format "calling case on incorrect type ~a" t))])]
 
@@ -211,28 +210,55 @@
   (if (dict-has-key? Γ t)
     (expand (dict-ref Γ t) Γ) t))
 
-;; checks if two expressions are equivalent up to α-renaming and ascryption
-(define (equiv? e1 e2 Γ1 Γ2)
+;; Checks if two types are equivalent up to α-conversion in context
+;;      (equiv-type Expr Expr Table[Sym Expr]): Bool
+(define (equiv-type e1 e2 Γ)
+  (equiv-type-core e1 e2 Γ Γ))
+(define (equiv-type-core e1 e2 Γ1 Γ2)
   (match* (e1 e2)
+    ; bound identifiers: if a key exists in the context, look it up
     [(x1 x2) #:when (dict-has-key? Γ1 x1)
-      (equiv? (dict-ref Γ1 x1) x2 Γ1 Γ2)]
+      (equiv-type-core (dict-ref Γ1 x1) x2 Γ1 Γ2)]
     [(x1 x2) #:when (dict-has-key? Γ2 x2)
-      (equiv? x1 (dict-ref Γ2 x2) Γ1 Γ2)]
-    [(`(λ (,x1 : ,t1) ,e1) `(λ (,x2 : ,t2) ,e2))
-      (let ([name gensym])
-      (and (equiv? e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name))
-        (equiv? t1 t2 Γ1 Γ2)))]
-    [(`(λ ,x1 ,e1) `(λ ,x2 ,e2))
-      (let ([name gensym])
-      (equiv? e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name)))]
+      (equiv-type-core x1 (dict-ref Γ2 x2) Γ1 Γ2)]
+
+    ; check for syntactic equivalence on remaining forms
     [(`(,l1 ...) `(,l2 ...))
-      (foldl (λ (x1 x2 acc) (if (equiv? x1 x2 Γ1 Γ2) acc #f)) #t l1 l2)]
+      (foldl (λ (x1 x2 acc) (if (equiv-type-core x1 x2 Γ1 Γ2) acc #f)) #t l1 l2)]
     [(v1 v2) (equal? v1 v2)]))
 
-(check-true (equiv? '(λ a a) '(λ b b) #hash() #hash()))
-(check-true (equiv? '(λ a (λ b a)) '(λ b (λ a b)) #hash() #hash()))
-(check-true (equiv? '(λ a (λ b (λ c (a (b c))))) '(λ c (λ a (λ b (c (a b))))) #hash() #hash()))
-(check-eq? (interpret '(if #t 1 0)) 1)
-(check-eq? (interpret '(type Natural Nat ((λ (x : Natural) (inc x)) 1))) 2)
-(check-eq? (infer '(type Natural Nat ((λ (x : Natural) (inc x)) 1))) 'Nat)
-(check-true (check '(type Natural Nat ((λ (x : Natural) (inc x)) 1)) 'Nat))
+;; Checks if two terms are equivalent up to α-conversion in context
+;;      (equiv-term Expr Expr Table[Sym Expr]): Bool
+(define (equiv-term e1 e2 Γ)
+  (equiv-term-core e1 e2 Γ Γ))
+(define (equiv-term-core e1 e2 Γ1 Γ2)
+  (match* (e1 e2)
+    ; bound identifiers: if a key exists in the context, look it up
+    [(x1 x2) #:when (dict-has-key? Γ1 x1)
+      (equiv-term-core (dict-ref Γ1 x1) x2 Γ1 Γ2)]
+    [(x1 x2) #:when (dict-has-key? Γ2 x2)
+      (equiv-term-core x1 (dict-ref Γ2 x2) Γ1 Γ2)]
+
+    ; function expressions: parameter names can be arbitrary
+    [(`(λ (,x1 : ,t1) ,e1) `(λ (,x2 : ,t2) ,e2))
+      (let ([name gensym])
+      (and (equiv-term-core e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name))
+        (equiv-term-core t1 t2 Γ1 Γ2)))]
+    [(`(λ ,x1 ,e1) `(λ ,x2 ,e2))
+      (let ([name gensym])
+      (equiv-term-core e1 e2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name)))]
+
+    ; check for syntactic equivalence on remaining forms
+    [(`(,l1 ...) `(,l2 ...))
+      (foldl (λ (x1 x2 acc) (if (equiv-term-core x1 x2 Γ1 Γ2) acc #f)) #t l1 l2)]
+    [(v1 v2) (equal? v1 v2)]))
+
+(require rackunit)
+(define-test-suite ext
+  (check-true (equiv-term '(λ a a) '(λ b b) #hash()))
+  (check-true (equiv-term '(λ a (λ b a)) '(λ b (λ a b)) #hash()))
+  (check-true (equiv-term '(λ a (λ b (λ c (a (b c))))) '(λ c (λ a (λ b (c (a b))))) #hash()))
+  (check-eq? (interpret '(if #t 1 0)) 1)
+  (check-eq? (interpret '(type Natural Nat ((λ (x : Natural) (inc x)) 1))) 2)
+  (check-eq? (infer '(type Natural Nat ((λ (x : Natural) (inc x)) 1))) 'Nat)
+  (check-true (check '(type Natural Nat ((λ (x : Natural) (inc x)) 1)) 'Nat)))
