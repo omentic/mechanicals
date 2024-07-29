@@ -1,5 +1,6 @@
 #lang racket
 (require "lib.rkt")
+(require "base.rkt")
 (provide (all-defined-out))
 
 ;; The Simply-Typed Lambda Calculus with iso-recursive types
@@ -92,6 +93,6 @@
     ; do not accidentally replace shadowed bindings
     [(or `(λ (,x : ,_) ,_) `(λ ,x ,_) `(μ ,x ,_)
       `(type ,x ,_ ,_)) #:when (equal? x key) expr]
-    [x #:when (equal? x key) value]
     [`(,e ...) `(,@(map (λ (x) (replace x key value)) e))]
+    [x #:when (equal? x key) value]
     [v v]))

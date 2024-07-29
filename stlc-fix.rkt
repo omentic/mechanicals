@@ -1,9 +1,10 @@
 #lang racket
 (require "lib.rkt")
+(require "base.rkt")
 
 ;; The Simply-Typed Lambda Calculus, with general recursion
 
-;;      (interpret Expr Table[Sym, Expr]): Value
+;;      (interpret Expr Context): Value
 (define (interpret expr)
   (interpret-core (strip (desugar expr)) #hash()))
 (define (interpret-core expr Γ)
@@ -29,7 +30,7 @@
 
     [e (err (format "interpreting an unknown expression ~a" e))]))
 
-;;      (check Expr Type Table[Sym, Type]): Bool
+;;      (check Expr Type Context): Bool
 (define (check expr with)
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
@@ -47,7 +48,7 @@
 
     [_ (equal? (infer-core expr Γ) with)])))
 
-;;      (infer Expr Table[Sym, Type]): Type
+;;      (infer Expr Context): Type
 (define (infer expr)
   (infer-core (desugar expr) #hash()))
 (define (infer-core expr Γ)

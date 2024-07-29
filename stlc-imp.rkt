@@ -1,5 +1,8 @@
 #lang racket
 (require "lib.rkt")
+(require "base.rkt")
+(require (only-in "stlc-ref.rkt" interpret))
+(provide check infer level-type level-body)
 
 ;; The Simply-Typed Lambda Calculus with higher-order *impredicative* references
 
@@ -31,11 +34,13 @@
 (define (check expr with)
   (check-core (desugar expr) with #hash()))
 (define (check-core expr with Γ)
-  (match with
+  (match expr
     [`(new ,e)
       (match with
         [`(Ref ,t) (check-core e t Γ)]
         [_ #f])]
+    [`(! ,e)
+      (check-core e `(Ref ,with) Γ)]
 
     [`(λ (,x : ,t) ,e)
       (match with

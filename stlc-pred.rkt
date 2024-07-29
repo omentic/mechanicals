@@ -1,28 +1,10 @@
 #lang racket
 (require "lib.rkt")
+(require "base.rkt")
+(require (only-in "stlc-ref.rkt" interpret))
+(provide check infer level-type level-body)
 
 ;; The Simply-Typed Lambda Calculus with higher-order *predicative* references
-
-; Γ, x: τ₁ ⊢ e: τ₂    k ≥ max-level(Γ, τ₁, τ₂)
-; ---------------------------------------------
-; Γ ⊢ λx:τ₁.e : τ₁ →ᵏ τ₂
-
-; Γ ⊢ e₁: τ₁ →ᵏ τ₂    Γ ⊢ e₂: τ₁
-; --------------------------------
-; Γ ⊢ (e₁ e₂): τ₂
-
-; --------------------------
-; Nat::Type₀, Unit::Type₀
-
-; τ::Typeᵢ
-; -------------
-; Ref τ :: Typeᵢ₊₁
-
-; τ₁::Typeᵢ, τ₂::Typeⱼ, k ≥ max-level(τ₁, τ₂)
-; -----------------------------------------
-; τ₁ →ᵏ τ₂ :: Typeₖ
-
-(require (only-in "stlc-ref.rkt" interpret))
 
 ;;      (check Expr Type Table[Sym, Type]): Bool
 (define (check expr with)
@@ -100,47 +82,3 @@
     [(or `(new ,e) `(! ,e) `(λ (,_ : ,_) ,e)) (level-body e Γ)]
     [(or `(set ,e1 ,e2) `(,e1 ,e2)) (max (level-body e1 Γ) (level-body e2 Γ))]
     [x #:when (symbol? x) 0]))
-
-; simple diverging program in STLC-ref
-; https://www.youtube.com/watch?v=XNgE8kBfSz8
-#;
-(interpret '
-  (let (id : (Nat → 0 Nat)) (λ x x)
-    (let (r : (Ref (Nat → 0 Nat))) (new id)
-      (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
-        (set r f
-          (f 0))))))
-#;
-(print (fmt '
-  (let (id : (Nat → 0 Nat)) (λ x x)
-    (let (r : (Ref (Nat → 0 Nat))) (new id)
-      (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
-        (set r f
-          (f 0)))))))
-
-(require rackunit)
-(check-exn
-  exn:fail?
-  (λ () (infer '
-    (let (id : (Nat → 0 Nat)) (λ x x)
-      (let (r : (Ref (Nat → 0 Nat))) (new id)
-        (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
-          (set r f
-            (f 0))))))))
-
-(check-eq?
-  (infer '
-    (let (id : (Nat → 0 Nat)) (λ x x)
-      (let (r : (Ref (Nat → 0 Nat))) (new id)
-        (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
-          (f 0)))))
-  'Nat)
-
-(check-eq?
-  (check '
-    (let (id : (Nat → 0 Nat)) (λ x x)
-      (let (r : (Ref (Nat → 0 Nat))) (new id)
-        (let (f : (Nat → 1 Nat)) (λ x ((! r) x))
-          (f 0))))
-    'Nat)
-  #t)

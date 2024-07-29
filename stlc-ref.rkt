@@ -1,5 +1,7 @@
 #lang racket
 (require "lib.rkt")
+(require "base.rkt")
+(provide interpret check infer)
 
 ;; The Simply-Typed Lambda Calculus with references
 
@@ -88,15 +90,3 @@
         [t (err (format "expected → type on application body, got ~a" t))])]
 
     [e (err (format "attempting to infer an unknown expression ~a" e))]))
-
-(provide interpret check infer)
-
-; simple diverging program in STLC-ref
-; https://www.youtube.com/watch?v=XNgE8kBfSz8
-#;
-(interpret '
-  (let (id : (Nat → Nat)) (λ x x)
-    (let (r : (Ref (Nat → Nat))) (new id)
-      (let (f : (Nat → Nat)) (λ x ((! r) x))
-        (set r f
-          (f 0))))))
