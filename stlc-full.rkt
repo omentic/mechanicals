@@ -503,15 +503,15 @@
 (define (equiv-type-core t1 t2 Γ1 Γ2)
   (match* (t1 t2)
     ; bound identifiers: if a key exists in the context, look it up
-    [(x1 x2) #:when (dict-has-key? Γ1 x1)
-      (equiv-type-core (dict-ref Γ1 x1) x2 Γ1 Γ2)]
-    [(x1 x2) #:when (dict-has-key? Γ2 x2)
-      (equiv-type-core x1 (dict-ref Γ2 x2) Γ1 Γ2)]
+    [(x1 x2) #:when (dict-has-key? Γ1 `(type ,x1))
+      (equiv-type-core (dict-ref Γ1 `(type ,x1)) x2 Γ1 Γ2)]
+    [(x1 x2) #:when (dict-has-key? Γ2 `(type ,x2))
+      (equiv-type-core x1 (dict-ref Γ2 `(type ,x2)) Γ1 Γ2)]
 
     ; recursive types: self-referential names can be arbitrary
     [(`(μ ,x1 ,t1) `(μ ,x2 ,t2))
       (let ([name gensym])
-        (equiv-type-core t1 t2 (dict-set Γ1 x1 name) (dict-set Γ2 x2 name)))]
+        (equiv-type-core t1 t2 (dict-set Γ1 `(type ,x1) name) (dict-set Γ2 `(type ,x2) name)))]
 
     ; check for syntactic equivalence on remaining forms
     [(`(,l1 ...) `(,l2 ...))
@@ -860,9 +860,9 @@
           (some ⇒ (! (cdr (cdr some))))
           (none ⇒ ((fold (inr sole)) : DoublyLinkedList)))))))
   '(DoublyLinkedList → 1 DoublyLinkedList)
-    #hash((DoublyLinkedList . (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))))))
+    #hash(((type DoublyLinkedList) . (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))))))
 
-(check-true ; FIXME: fold is not in check form?
+(check-true
   (check (desugar '
     (type DoublyLinkedList (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))
     (let (get : (DoublyLinkedList → 1 (Nat ⊕ Unit)))
