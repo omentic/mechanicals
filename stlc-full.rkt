@@ -373,11 +373,11 @@
 
     [`(if ,c ,e1 ,e2)
       (level-max (level-expr c Γ)
-        (level-expr e1 Γ) (level-expr e2 Γ))]
+        (level-max (level-expr e1 Γ) (level-expr e2 Γ)))]
     [`(case ,c (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
       (level-max (level-expr c Γ) ; support shadowing
-        (level-expr e1 (dict-remove Γ x1))
-        (level-expr e2 (dict-remove Γ x2)))]
+        (level-max (level-expr e1 (dict-remove Γ x1))
+          (level-expr e2 (dict-remove Γ x2))))]
     [`(λ (,x : ,_) ,e) ; support shadowing
       (level-expr e (dict-remove Γ x))]
 
@@ -526,8 +526,8 @@
 
 ;; Expands a type alias into weak-head normal form, for literal matching.
 (define/contract (expand-whnf t Γ) (-> type? dict? type?)
-  (if (dict-has-key? Γ `(type t))
-    (expand-whnf (dict-ref Γ t) Γ) t))
+  (if (dict-has-key? Γ `(type ,t))
+    (expand-whnf (dict-ref Γ `(type ,t)) Γ) t))
 
 ;; Replaces all references to a type alias with another alias.
 (define/contract (replace-type type key value) (-> type? type? type? type?)
@@ -563,7 +563,7 @@
       (cbv-core e Γ Σ)]
 
     [`(new ,e)
-      (let ([p (alloc! Σ (level-expr e))])
+      (let ([p (alloc! Σ (level-expr e Γ))])
         (write! Σ p (cbv-core e Γ Σ)))]
     [`(! ,e)
       (match (cbv-core e Γ Σ)
@@ -771,7 +771,7 @@
         [t (err (format "case has incorrect type ~a on condition, expected a sum" t))])]
 
     [`(unfold ,e)
-      (match (expand-whnf (infer-core e Γ) Γ)
+      (match (infer-core e Γ)
         [`(μ ,x ,t) (replace-type t x `(μ ,x ,t))]
         [t (err (format "expected ~a to be of recursive type, got ~a" e t))])]
 
