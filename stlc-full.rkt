@@ -1,4 +1,5 @@
 #lang racket
+(require rackunit)
 (require syntax/location)
 (require (for-syntax syntax/location))
 
@@ -617,9 +618,8 @@
       (match (cbv-core e1 Γ Σ)
         [`(λ (,x : ,t) ,e1 ,env)
           (cbv-core e1 (dict-set env x (cbv-core e2 Γ Σ)) Σ)]
-        [e1
-          (err (format "attempting to interpret arg ~a applied to unknown expression ~a"
-            e2 e1))])]
+        [e1 (err (format "attempting to interpret arg ~a applied to unknown expression ~a" e2 e1))])]
+
     [e (err (format "attempting to interpret unknown expression ~a" e))]))
 
 ;; Checks that an expression is of a type, and returns #t or #f, or a bubbled-up error.
@@ -789,3 +789,101 @@
         [t (err (format "expected → type on application body, got ~a" t))])]
 
     [_ (err (format "attempting to infer an unknown expression ~a" expr))]))
+
+
+;; Define aliases from higher-level constructs to lower-level core forms.
+(define (desugar expr)
+  (match expr
+    ; convenient aliases
+    ['⟨⟩ 'sole]
+    [`(ref ,e) (desugar `(new ,e))]
+    [`(deref ,e) (desugar `(! ,e))]
+    [`(,e :: ,k) (desugar `(,e ⇑ ,k))]
+
+    ; set-with-continuation
+    [`(set ,e1 ,e2 ,in)
+      (desugar `(let (_ : Unit) (set ,e1 ,e2) ,in))]
+
+    ; many forms of let. this lets us elide many typing annotations
+    [`(let (,id : (,a → ,k ,b)) (λ (,x : ,a) ,e) ,in)
+      (desugar `((λ (,id : (,a → ,k ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let (,id : (,a → ,k ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ (,id : (,a → ,k ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let (,id : (,a → ,b)) (λ (,x : ,a) ,e) ,in)
+      (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let (,id : (,a → ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let ,x (,e : ,t) ,in)
+      (desugar `((λ (,x : ,t) ,in) (,e : ,t)))]
+    [`(let ,x ,e ,in)
+      (desugar `((λ ,x ,in) ,e))]
+    [`(let ,x ,e)
+      (desugar `(let ,x ,e sole))]
+
+    ; desugar all remaining constructions
+    [`(,e ...) `(,@(map desugar e))]
+    [e e]))
+
+;; (type DoublyLinkedList (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit)))
+(check-equal?
+  (call-by-value (desugar '
+    (let (next : ((μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit)) → 1
+                  (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))))
+      (λ (self : (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit)))
+        (case (unfold self)
+          (some ⇒ (! (cdr (cdr some))))
+          (none ⇒ (fold (inr sole)))))
+    (let (my_list : (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit)))
+      (fold
+        (inl
+          (pair 413
+          (pair (new (inr sole))
+                (new (inr sole))))))
+    (next my_list)))))
+  '(inr sole))
+
+(check-equal?
+  (infer (desugar '
+    (type DoublyLinkedList (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))
+    (λ (self : DoublyLinkedList)
+       (case (unfold self)
+        (some ⇒ ((! (cdr (cdr some))) : DoublyLinkedList))
+        (none ⇒ ((fold (inr sole)) : DoublyLinkedList)))))))
+  '((μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit)) → 1 (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))))
+
+(check-true
+  (equiv-type
+    (infer (desugar '
+      (type DoublyLinkedList (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))
+      (λ (self : DoublyLinkedList)
+         (case (unfold self)
+          (some ⇒ (! (cdr (cdr some))))
+          (none ⇒ ((fold (inr sole)) : DoublyLinkedList)))))))
+  '(DoublyLinkedList → 1 DoublyLinkedList)
+    #hash((DoublyLinkedList . (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))))))
+
+(check-true ; FIXME: fold is not in check form?
+  (check (desugar '
+    (type DoublyLinkedList (μ Self ((Nat × ((Ref Self) × (Ref Self))) ⊕ Unit))
+    (let (get : (DoublyLinkedList → 1 (Nat ⊕ Unit)))
+      (λ self
+        (case (unfold self)
+          (some ⇒ (inl (car some)))
+          (none ⇒ (inr sole))))
+    (let (prev : (DoublyLinkedList → 1 DoublyLinkedList))
+      (λ self
+        (case (unfold self)
+          (some ⇒ (! (car (cdr some))))
+          (none ⇒ ((fold (inr sole)) : DoublyLinkedList))))
+    (let (next : (DoublyLinkedList → 1 DoublyLinkedList))
+      (λ self
+        (case (unfold self)
+          (some ⇒ (! (cdr (cdr some))))
+          (none ⇒ ((fold (inr sole)) : DoublyLinkedList))))
+    (let (my_list : DoublyLinkedList)
+      (fold (inl
+        (pair 413
+        (pair (new ((fold (inr sole)) : DoublyLinkedList))
+              (new ((fold (inr sole)) : DoublyLinkedList))))))
+    (prev my_list)))))))
+    'DoublyLinkedList))
