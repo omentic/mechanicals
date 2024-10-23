@@ -17,7 +17,7 @@
       (match (interpret-core e Γ)
         [`(λ ,x ,e ,env)
           ; FIXME: unsure what should be Γ and what should be env
-          (interpret-core e (dict-set Γ x `(fix (λ ,x ,e ,Γ))))]
+          (interpret-core e (dict-set env x `(fix (λ ,x ,e ,Γ))))]
         [e (err (format "applying fix to unknown expression ~a" e))])]
 
     [`(λ ,id ,body) `(λ ,id ,body ,Γ)]

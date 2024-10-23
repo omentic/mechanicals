@@ -208,8 +208,8 @@
 ;; Expands a type alias into weak-head normal form, for literal matching.
 ;;      (expand Type Table[Id, Expr ⊕ Type]): Type
 (define (expand t Γ)
-  (if (dict-has-key? Γ t)
-    (expand (dict-ref Γ t) Γ) t))
+  (if (dict-has-key? Γ `(type ,t))
+    (expand (dict-ref Γ `(type ,t)) Γ) t))
 
 ;; Checks if two types are equivalent up to α-conversion in context
 ;;      (equiv-type Expr Expr Table[Sym Expr]): Bool

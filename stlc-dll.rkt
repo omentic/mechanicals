@@ -91,7 +91,7 @@
 (define (check-core expr with Γ)
   (match expr
     [`(type ,t1 ,t2 ,in)
-      (check-core in with (dict-set Γ t1 t2))]
+      (check-core in with (dict-set Γ `(type ,t1) t2))]
 
     [`(if ,c ,e1 ,e2)
       (and (check-core c 'Bool Γ)
@@ -111,7 +111,7 @@
         [`(,t1 ⊕ ,t2) (check-core e t2 Γ)]
         [_ #f])]
     [`(case ,e (,x1 ⇒ ,e1) (,x2 ⇒ ,e2))
-      (match (infer-core e Γ)
+      (match (infer-core e Γ) ; avoid needing type annotation on e
         [`(,a1 ⊕ ,a2)
           (and (check-core e1 with (dict-set Γ x1 a1))
             (check-core e2 with (dict-set Γ x2 a2)))]
@@ -126,7 +126,7 @@
 
     [`(fold ,e)
       (match with
-        [`(μ ,x ,t) (check-core e t (dict-set Γ x `(μ ,x ,t)))]
+        [`(μ ,x ,t) (check-core e t (dict-set Γ `(type ,x) `(μ ,x ,t)))]
         [_ #f])]
 
     [`(λ (,x : ,t) ,e)
@@ -175,7 +175,7 @@
       (expand (dict-ref Γ x) Γ)]
 
     [`(type ,t1 ,t2 ,in)
-      (infer-core in (dict-set Γ t1 t2))]
+      (infer-core in (dict-set Γ `(type ,t1) t2))]
     [`(,e : ,t) ; we have a manual type annotation, so we must expand to weak-head normal form
       (if (check-core e (expand t Γ) Γ) (expand t Γ)
         (err (format "annotated expression ~a is not of annotated type ~a" e t)))]
