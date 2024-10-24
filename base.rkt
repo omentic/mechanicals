@@ -12,10 +12,12 @@
     [`(λ ,x ,e) (format "λ~a.[~a]" x (fmt e))]
     [`((λ ,x ,e1) ,e2) (format "~a = ~a; ~a" x (fmt e2) (fmt e1))]
     [`(λ (,x : ,t) ,e) (format "~a: ~a; ~a" x (fmt t) (fmt e))]
-    [`((λ (,x : ,t) ,e1) ,e2) (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e2) (fmt e1))]
+    [`((λ (,x : ,t) ,e1) ,e2)
+      (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e2) (fmt e1))]
     [`(λ ,x ,e ,env) (format "λ~a.[~a]" x (fmt e))]
     [`(μ ,x ,t) (format "μ~a.~a" x (fmt t))]
-    [`(let (,x : ,t) ,e ,in) (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e) (fmt in))]
+    [`(let (,x : ,t) ,e ,in)
+      (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e) (fmt in))]
     [`(let ,x ,e ,in) (format "~a = ~a; ~a" x (fmt e) (fmt in))]
     [`(set ,x ,e ,in) (format "~a := ~a; ~a" x (fmt e) (fmt in))]
     [`(,a → ,b) (format "(~a → ~a)" (fmt a) (fmt b))]
@@ -25,25 +27,21 @@
     [`(! ,a) (format "!~a" (fmt a))]
     [`(,a ,b) (format "(~a ~a)" (fmt a) (fmt b))]
     [(hash-table (keys values) ...)
-      (format "{~a}" (foldl (λ (k v acc) (format "~a: ~a;" (fmt k) (fmt v))) "" keys values))]
-    [expr (format "~a" expr)]))
+      (format "{~a}"
+        (foldl
+          (λ (k v acc)
+            (format "~a: ~a;" (fmt k) (fmt v)))
+          "" keys values))]
+    [_ (format "~a" expr)]))
 
-;; Removes typing annotations and similar constructs, for interpretation
-(define (strip expr)
-  (match expr
-    [`(,e : ,_) (strip e)]
-    [`(type ,_ ,_ ,e) (strip e)]
-    [`(fold ,_ ,e) `(fold ,(strip e))]
-    [`(unfold ,_ ,e) `(unfold ,(strip e))]
-    [`(,e ...) `(,@(map strip e))]
-    [e e]))
-
-;; Define aliases from higher-level constructs to their core forms
+;; Aliases from higher-level constructs to their core forms.
+;; This lets us elide many typing annotations.
 (define (desugar expr)
   (match expr
     ['⟨⟩ 'sole]
     [`(ref ,e) (desugar `(new ,e))]
     [`(deref ,e) (desugar `(! ,e))]
+    [`(,e ⇑ ,k) (desugar `(,e :: ,k))]
 
     ; set-with-continuation
     [`(set ,e1 ,e2 ,in)
