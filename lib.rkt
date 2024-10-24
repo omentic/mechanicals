@@ -45,6 +45,8 @@
 (define (symbol->list s) (string->list (symbol->string s)))
 (define (list->symbol l) (string->symbol (list->string l)))
 (define (symbol-append a b) (string->symbol (string-append (symbol->string a) (symbol->string b))))
+(define (keys->set dict) (list->set (dict-keys dict)))
+(define (values->set dict) (list->set (dict-values dict)))
 
 ;; Provides a "pretty" gensym: 'a -> 'b, 'z -> 'aa, 'az -> 'ba etc.
 ;; quite inefficient.
@@ -87,3 +89,70 @@
   (α-convert '(λ a (λ b (λ c (a (b c)))))))
 (check-equal? '(λ a (λ b (λ c (a (b c)))))
   (α-convert '(λ c (λ a (λ b (c (a b)))))))
+
+;; Provides a pretty-print utility for terms in the simply-typed lambda calculus
+(define (fmt expr)
+  (match expr
+    ['sole "⟨⟩"]
+    [`(λ ,x ,e) (format "λ~a.[~a]" x (fmt e))]
+    [`((λ ,x ,e1) ,e2) (format "~a = ~a; ~a" x (fmt e2) (fmt e1))]
+    [`(λ (,x : ,t) ,e) (format "~a: ~a; ~a" x (fmt t) (fmt e))]
+    [`((λ (,x : ,t) ,e1) ,e2)
+      (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e2) (fmt e1))]
+    [`(λ ,x ,e ,env) (format "λ~a.[~a]" x (fmt e))]
+    [`(μ ,x ,t) (format "μ~a.~a" x (fmt t))]
+    [`(let (,x : ,t) ,e ,in)
+      (format "~a: ~a; ~a = ~a; ~a" x (fmt t) x (fmt e) (fmt in))]
+    [`(let ,x ,e ,in) (format "~a = ~a; ~a" x (fmt e) (fmt in))]
+    [`(set ,x ,e ,in) (format "~a := ~a; ~a" x (fmt e) (fmt in))]
+    [`(,a → ,b) (format "(~a → ~a)" (fmt a) (fmt b))]
+    [`(,a → ,k ,b) (format "(~a →~a ~a)" (fmt a) k (fmt b))]
+    [`(Ref ,a) (format "Ref ~a" (fmt a))]
+    [`(new ,a) (format "new ~a" (fmt a))]
+    [`(! ,a) (format "!~a" (fmt a))]
+    [`(,a ,b) (format "(~a ~a)" (fmt a) (fmt b))]
+    [(hash-table (keys values) ...)
+      (format "{~a}"
+        (foldl
+          (λ (k v acc)
+            (format "~a: ~a;" (fmt k) (fmt v)))
+          "" keys values))]
+    [_ (format "~a" expr)]))
+
+;; Aliases from higher-level constructs to their core forms.
+;; This lets us elide many typing annotations.
+(define (desugar expr)
+  (match expr
+    ; convenient aliases
+    ['⟨⟩ 'sole]
+    [`(ref ,e) (desugar `(new ,e))]
+    [`(deref ,e) (desugar `(! ,e))]
+    [`(,e ⇑ ,k) (desugar `(,e :: ,k))]
+
+    ; set-with-continuation
+    [`(set ,e1 ,e2 ,in)
+      (desugar `(let (_ : Unit) (set ,e1 ,e2) ,in))]
+
+    ; many forms of let. this lets us elide many typing annotations
+    [`(let (,id : (,a → ,k ,b)) (λ (,x : ,a) ,e) ,in)
+      (desugar `((λ (,id : (,a → ,k ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let (,id : (,a → ,k ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ (,id : (,a → ,k ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let (,id : (,a → ,b)) (λ (,x : ,a) ,e) ,in)
+      (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let (,id : (,a → ,b)) (λ ,x ,e) ,in)
+      (desugar `((λ (,id : (,a → ,b)) ,in) (λ (,x : ,a) ,e)))]
+    [`(let ,x (,e : ,t) ,in)
+      (desugar `((λ (,x : ,t) ,in) (,e : ,t)))]
+    [`(let ,x ,e ,in)
+      (desugar `((λ ,x ,in) ,e))]
+    [`(let ,x ,e)
+      (desugar `(let ,x ,e sole))]
+
+    ; letrec as let + fix
+    [`(letrec (,x : ,t) ,e ,in)
+      (desugar `(let (,x : ,t) (fix (λ (,x : ,t) ,e)) ,in))]
+
+    ; desugar remaining constructions
+    [`(,e ...) `(,@(map desugar e))]
+    [e e]))

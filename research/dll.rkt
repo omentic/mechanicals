@@ -1,7 +1,7 @@
 #lang racket
-(require "lib.rkt" "base.rkt")
-(require (only-in "stlc-rec.rkt" replace))
-(require (only-in "stlc-ext.rkt" type->whnf))
+(require "../lib.rkt")
+(require (only-in "../simple/rec.rkt" replace))
+(require (only-in "../simple/ext.rkt" type->whnf))
 (provide (all-defined-out))
 
 ;; The Simply-Typed Lambda Calculus with higher-order *impredicative* references,

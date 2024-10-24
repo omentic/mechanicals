@@ -1,6 +1,5 @@
 #lang racket
-(require "lib.rkt")
-(require "base.rkt")
+(require "../lib.rkt")
 (provide (all-defined-out))
 
 ;; The Simply-Typed Lambda Calculus, with simple extensions

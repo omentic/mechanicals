@@ -1,6 +1,5 @@
 #lang racket
-(require "lib.rkt")
-(require "base.rkt")
+(require "../lib.rkt")
 (provide (all-defined-out))
 
 ;; The Simply-Typed Lambda Calculus
@@ -58,12 +57,11 @@
     [x #:when (dict-has-key? Γ x) (dict-ref Γ x)]
     [f #:when (symbol? f)
       (err (format "attempting to infer type of free variable ~a" f))]
+    [`(λ (,x : ,t) ,e)
+      `(,t → ,(infer e (dict-set Γ x t)))]
     [`(,e1 ,e2)
       (match (infer e1 Γ)
         [`(,t1 → ,t2)
           (if (check e2 t1 Γ) t2
             (err (format "inferred argument type ~a does not match arg ~a" t1 e2)))]
-        [t (err (format "expected → type on application body, got ~a" t))])]
-    [`(λ (,x : ,t) ,e)
-      `(,t → ,(infer e (dict-set Γ x t)))]))
-
+        [t (err (format "expected → type on application body, got ~a" t))])]))

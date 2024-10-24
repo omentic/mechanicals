@@ -1,6 +1,5 @@
 #lang racket
-(require "lib.rkt")
-(require "base.rkt")
+(require "../lib.rkt")
 (require (only-in "stlc.rkt" stlc/type?))
 
 ;; The Simply-Typed Lambda Calculus, with general recursion

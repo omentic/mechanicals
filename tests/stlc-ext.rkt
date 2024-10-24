@@ -1,6 +1,6 @@
 #lang racket
 (require (except-in rackunit check))
-(require "../stlc-ext.rkt")
+(require "../simple/ext.rkt")
 
 (check-true (equiv-term '(λ a a) '(λ b b) #hash()))
 (check-true (equiv-term '(λ a (λ b a)) '(λ b (λ a b)) #hash()))

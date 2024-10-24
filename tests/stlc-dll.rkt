@@ -1,6 +1,6 @@
 #lang racket
 (require (except-in rackunit check))
-(require "../stlc-dll.rkt")
+(require "../research/dll.rkt")
 
 (define-test-suite let-set-inc-case
   (check-exn
